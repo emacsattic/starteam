@@ -50,6 +50,7 @@
 ;;    vc-starteam-dired-mode-name
 ;;    vc-starteam-port
 ;;    vc-starteam-user
+;;    vc-starteam-locking-user
 ;;    vc-starteam-password
 ;;    vc-starteam-keep-unlocked-files-read-only
 ;;    vc-starteam-unlock-after-checkin
@@ -125,6 +126,9 @@
 ;;          vc-mode
 ;;        - 554531 - Have get-directory go into a dired mode.
 ;;        - register works
+;;        - Merge files as needed
+;;        - Added vc-starteam-locking-user so that we can tell if
+;;          the current user has the file locked.
 ;;          
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -154,6 +158,8 @@
 
 (defvar vc-starteam-user nil "*Who to log onto StarTeam as")
 
+(defvar vc-starteam-locking-user nil "*The name that StarTeam uses to say that I have a file locked")
+
 (defvar vc-starteam-password nil "password to log onto StarTeam with")
 
 ;; NOTE: if you are actually setting vc-starteam-executable on win32, the
@@ -165,9 +171,9 @@ This might be \"stcmd\" if the executable is in your path; \"/usr/local/bin/stcm
 if you are on a unix platform; or \"C:\\\\\\\\Program Files\\\\\\\\StarTeam 4.0\\\\\\\\stcmd.exe\"
 if you are on win32.")
 
-(defvar vc-starteam-keep-unlocked-files-read-only nil "If non-nil, files that are unlocked will be marked read-only. Mimics the \"Mark unlocked working files read-only\" option in the Win32 Starteam client's \"Workstation Options\" dialog")
+(defvar vc-starteam-keep-unlocked-files-read-only t "If non-nil, files that are unlocked will be marked read-only. Mimics the \"Mark unlocked working files read-only\" option in the Win32 Starteam client's \"Workstation Options\" dialog")
 
-(defvar vc-starteam-unlock-after-checkin nil "If non-nil, files will be unlocked after they are checked in.")
+(defvar vc-starteam-unlock-after-checkin t "If non-nil, files will be unlocked after they are checked in.")
 
 (defvar vc-starteam-switch-to-output t 
   "Determines how the output of a starteam query command (such as vc-starteam-get-file-history) 
@@ -338,12 +344,20 @@ Each function is called with the arguments FILES and REASON.")
 										  (end (progn (move-to-column 26)
 													  (point)))
 										  (text (buffer-substring-no-properties start end)))
-									 (message "Looking for lock in %s" text)
-									 (if (string-match "^ *\\([^ ].*\\) *$" text)
-										 (substring text (match-beginning 1)
-													(match-end 1))
+									 (message "Looking for lock in [%s]" text)
+									 (if (string-match "^ *\\([^ ].*?\\) *$" text)
+										 (progn
+										   (message "Locking user:[%s]"
+										   (substring text (match-beginning 1)
+													  (match-end 1)))
+										   (substring text (match-beginning 1)
+													  (match-end 1)))
 									   nil)))
-				(setq state (cond ((string-equal "Merge" string-state) 'needs-merge)
+				(setq state (cond (locking-user 
+								   
+								   (if (string-equal locking-user vc-starteam-locking-user)
+									   'edited locking-user))
+								  ((string-equal "Merge" string-state) 'needs-merge)
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
 								  ((string-equal "Unknown" string-state) nil)
 								  ((string-equal "Current" string-state) 'up-to-date)
@@ -478,13 +492,15 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 													(point)))
 										(text (buffer-substring-no-properties start end)))
 								   (message "Looking for lock in %s" text)
-								   (if (string-match "^ *\\([^ ].*\\) *$" text)
+								   (if (string-match "^ *\\([^ ].*?\\) *$" text)
 									   (substring text (match-beginning 1)
 												  (match-end 1))
 									 nil)))
 										
 								   
-			  (cond (locking-user locking-user)
+			  (cond (locking-user 								
+					 (if (string-equal locking-user vc-starteam-locking-user)
+						 'edited locking-user))
 					((string-equal "Merge" string-state) 'needs-merge)
 					((string-equal "Out of Date" string-state) 'needs-patch)
 					((string-equal "Unknown" string-state) nil)
@@ -794,9 +810,10 @@ force - if non-nil, forces the checkout"
 	 ;; to read-write). We also have to unlock the file since
 	 ;; starteam doesn't allow setting read-only outside of the
 	 ;; context of a lock or unlock operation. Jeesh!
-	 (must-make-file-read-only editable)
-	 (unlock-operation (if must-make-file-read-only "-u" nil))
-	 (read-write-operation (if must-make-file-read-only "-ro" nil))
+	 (must-make-file-read-only (not editable))
+	 (unlock-operation (if must-make-file-read-only "-u" "-l"))
+	 (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
+	 (forced (if must-make-file-read-only nil "-o"))
 	 (output-buffer)
 	 (tdir)
 	 )
@@ -805,7 +822,7 @@ force - if non-nil, forces the checkout"
 
     (save-excursion
       (setq output-buffer (vc-starteam-execute nil command "CHECK OUT FILE" path file 
-					    read-write-operation unlock-operation 
+					    read-write-operation unlock-operation forced
 					    "-rp" (if destfile temp-directory 
 								(vc-starteam-get-working-dir-from-local-path dir))
 						(if (and rev (string< "" rev))  "-vn")
