@@ -32,6 +32,12 @@
 ;; This files implements a StarTeam (www.starbase.com) backend for the VC
 ;; module.  See vc.el for more information.
 ;;
+;; Contributors:
+;;   Matthew O. Smith
+;;   Christopher J. Kline
+;;   Stephan Zitz <szitz at globalscape dot com>
+;;      Added support for mapping cygwin drives under Win32 and XEmacs
+;;
 ;; Configuration:
 ;;
 ;; At a minimum you need to set the following:
@@ -137,10 +143,14 @@
 ;;        - Added vc-starteam-locking-user so that we can tell if
 ;;          the current user has the file locked.
 ;;        - Cache the status from dired mode
+;;        - Check the cached value of vc-state to see if a file is registered
+;;          This helps for files that are not registered
+;;        - Added support for mapping cygwin drives under Win32 and XEmacs
 ;;          
 ;; To do:
 ;;    - Have Merge do an optional checkin
 ;;    - Integrate fully into vc-mode menus
+;;    - Have the get directory status get both status and workfile version in the same call to StarTeam.
 ;;
 ;; Known bugs:
 ;;    - Merge checks in the wrong file (disabled merge menu option
@@ -154,9 +164,15 @@
 (eval-when-compile
   (progn
     (require 'dired)
+	(require 'string) ;; Comes from the elib package
     (require 'vc)))
 (require 'dired)
 (require 'vc)
+(require 'string) ;; Comes from the elib package
+
+(defvar vc-starteam-map-cygdrive nil "Should /cygdrive/_DRIVE_/ be mapped to _DRIVE_:")
+
+(defvar starteam-cygdrive-path "C:\\Cygwin\\" "Path to cygwin")
 
 (defvar vc-starteam-dired-mode-name "Dired under StarTeam" "The name of the dired mode")
 
@@ -1144,8 +1160,18 @@ force - if non-nil, forces the checkout"
   (let* ((command "co")
 	(temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
 	(dir (file-name-directory (buffer-file-name)))
+	(no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
+	(no-map-dir (file-name-directory (buffer-file-name)))
 	(file (buffer-name))
-	(path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+	(path (vc-starteam-get-vc-starteam-path-from-local-path no-map-dir)))
+
+    (let* ((dir (if starteam-map-cygdrive 
+                    (starteam-remap-cygdrive no-map-dir)
+                  no-map-dir))
+           (temp-directory (if starteam-map-cygdrive
+                               (starteam-unremap-cygdrive no-map-temp-directory)
+                             (no-map-temp-directory))))
+
 
     (save-buffer)
     (message "Checking out temporary version of file %s%s to %s/%s%s" 
@@ -1160,7 +1186,7 @@ force - if non-nil, forces the checkout"
 		  "/" file)
 	nil)
       )
-    ))
+    )))
 
 ;; maybe should have vc-starteam-check-file-status return vector of all
 ;; status elements? Then this method could simply check to see if the
@@ -1938,6 +1964,19 @@ returns \"test/myview/a/b\"
       path)
     ))
 
+
+(defun vc-starteam-remap-cygdrive (path)
+  "If the provided path contains \"/cygdrive/letter/\", strip those out and replace
+with \"letter:\"
+"
+  (string-replace-match "^/cygdrive/\\([^/]\\)\\(.*\\)" path "\\1:\\2")
+)
+
+(defun starteam-unremap-cygdrive( path )
+  "Converts a path of type /path/to/cygwin-relative to form /cygwin/c/path/to/cygwin-relative"
+  (concat starteam-cygdrive-path path)
+)
+
 (defun vc-starteam-get-working-dir-from-local-path (local-dir)
   "Given a local directory, attempts to determine the starteam working directory
 based upon the values in vc-starteam-to-directory-alist. If the given directory
@@ -1957,6 +1996,14 @@ and
 
 return \"X:/test\"
 "
+  (if vc-starteam-map-cygdrive
+      (vc-starteam-remap-cygdrive (vc-starteam-get-working-dir-from-local-path-no-map local-dir))
+      (vc-starteam-get-working-dir-from-local-path-no-map local-dir)
+  )
+)
+
+(defun vc-starteam-get-working-dir-from-local-path-no-map (local-dir)
+  "Perform the starteam-get-working-dir-from-local-path before applying any cygdrive mappings"
   (let* ((working-dir nil)
 	 (still-looking t))
     (mapcar  (lambda (x)
