@@ -37,6 +37,8 @@
 ;;   Christopher J. Kline
 ;;   Stephan Zitz <szitz at globalscape dot com>
 ;;      Added support for mapping cygwin drives under Win32 and XEmacs
+;;   Knut Forkalsrud < knut at cj dot com >
+;;      Added some much needed improvements
 ;;
 ;; Configuration:
 ;;
@@ -1181,7 +1183,8 @@ and returns the buffer containing the output of the status check"
 ;;       )
 ;;     ))
 
-
+;; knut 24 JAN 2002 : Added -o switch to make sure that the temporary
+;; file is always checked out
 (defun vc-starteam-checkout-temp-file ()
   "Checkout the file in the current buffer into a temp dir.  Return the path name of the temp file"
   (interactive)
@@ -1190,7 +1193,7 @@ and returns the buffer containing the output of the status check"
 		 (dir (file-name-directory (buffer-file-name)))
 		 (no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
 		 (no-map-dir (file-name-directory (buffer-file-name)))
-		 (file (buffer-name))
+		 (file (file-name-directory (buffer-file-name)))
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path no-map-dir)))
 
     (let* ((dir (if starteam-map-cygdrive 
@@ -1206,7 +1209,7 @@ and returns the buffer containing the output of the status check"
 			   dir file temp-directory dir file)
 	  (save-excursion
 		(set-buffer (vc-starteam-execute nil command "TEMPORARY CHECK OUT OF FILE" path file 
-										 (vc-starteam-view-working-dir temp-directory)))
+										 "-o" (vc-starteam-view-working-dir temp-directory)))
 		(goto-char (point-min))
 		(if (re-search-forward "(working dir: \\(.*\\))" nil t)
 			(concat (buffer-substring-no-properties (match-beginning 1)

@@ -421,7 +421,7 @@ force - if non-nil, forces the checkout"
 	;;(dir (file-name-directory (buffer-file-name)))
 	(no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
 	(no-map-dir (file-name-directory (buffer-file-name)))
-	(file (file-name-nondirectory (buffer-name)))
+	(file (file-name-nondirectory (buffer-file-name)))
 ;;	(path (starteam-get-starteam-path-from-local-path dir)))
 	(path (starteam-get-starteam-path-from-local-path no-map-dir)))
 
@@ -757,10 +757,10 @@ unlock:
 sFilter [MCONIGU]*")
   (let* ((command "list")
 	 (dir (expand-file-name rawdir))
-	 (path (starteam-get-starteam-path-from-local-path (expand-file-name dir))))
+	 (path (starteam-get-starteam-path-from-local-path dir)))
      (message "Checking directory %s (with filter)..." dir )
 
-     (switch-to-buffer (starteam-execute command filter path "-is" "-filter" filter  "-fp" (expand-file-name dir)) t)
+     (switch-to-buffer (starteam-execute command filter path "-is" "-filter" filter  "-fp" dir) t)
        
      ;;****************************************
      ;;                                        
@@ -773,7 +773,7 @@ sFilter [MCONIGU]*")
        (delete-matching-lines "^Current"))
 
      (starteam-remove-empty-directory-listings)
-     (cd (expand-file-name dir))
+     (cd dir)
      (starteam-dired-mode)     
      ))
 
