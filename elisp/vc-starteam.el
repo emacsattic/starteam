@@ -49,11 +49,13 @@
 ;;         vc-starteam-to-directory-alist (list (cons  "^/export/home/username/working"  "src/src" )))
 ;;
 ;;
-;;    Uses dired-omit-files to tell VC what files are not under source control
+;;    Uses dired-omit-files  and dired-omit-extensions to tell VC what files are not under source control
 ;;    and are not to be under source control.
 ;;    (require 'dired-x)
-;;	  (setq dired-omit-files
-;;		  (concat dired-omit-files "\\|^TAGS$\\|.war$\\|.class$\\|.cache$\\|.flc$\\|^.dired$"))
+;;    (add-to-list 'dired-omit-extensions "flc")
+;;    (add-to-list 'dired-omit-extensions "war")
+;;    (add-to-list 'dired-omit-extensions "class")
+;;    (vc-starteam-omit-file "TAGS")
 ;;
 ;; You will need to customize vc-starteam-to-directory-alist to your
 ;; particular Starteam projects; see the doc comments for more
@@ -310,14 +312,28 @@ Each function is called with the arguments FILES and REASON.")
   "Determine if this file is in StarTeam. See \\[vc-starteam-get-vc-starteam-path-from-local-path] for more info"
   (interactive "fFile Name:")
   (if vc-starteam-debug (message "vc-starteam-responsible-p %s" ufile))
-  (if (string-match dired-omit-files (file-name-nondirectory ufile))
+  (if (string-match (dired-omit-regexp) (file-name-nondirectory ufile))
 	  nil
 	(let* ((dir (file-name-directory (expand-file-name ufile)))
 		   (starteam-path	(vc-starteam-get-vc-starteam-path-from-local-path dir t)))
 	  (if vc-starteam-debug (message "vc-starteam-responsible-p: dir:%S path:%S" dir starteam-path))
 	  starteam-path)))
 
+;****************************************
+;                                        
+;  vc-starteam-steal-lock
+;                                        
+;****************************************
+(defun vc-starteam-steal-lock (ufile &optional version) 
+  (if vc-starteam-debug (message "vc-starteam-steal-lock %s %s" ufile version ))
+  (vc-starteam-perform-lock-operation-on-file ufile))
 
+
+;****************************************
+;                                        
+;  vc-starteam-dir-state
+;                                        
+;****************************************
 (defun vc-starteam-dir-state ( udir )
   "Get the state of each file in UDIR.  Set the following properties:
    vc-backend
@@ -438,7 +454,7 @@ Each function is called with the arguments FILES and REASON.")
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
 								  ((string-equal "Unknown" string-state) 'needs-merge)
 								  ((string-equal "Current" string-state) 'up-to-date)
-								  ((string-equal "Modified" string-state) 'edited)
+								  ((string-equal "Modified" string-state) 'unlocked-changes)
 								  ((string-equal "Missing" string-state) 'needs-patch)
 								  ((string-equal "Not in View" string-state) 'missing)))
 				(if state 
@@ -574,7 +590,7 @@ Each function is called with the arguments FILES and REASON.")
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
 								  ((string-equal "Unknown" string-state) 'needs-merge)
 								  ((string-equal "Current" string-state) 'up-to-date)
-								  ((string-equal "Modified" string-state) 'edited)
+								  ((string-equal "Modified" string-state) 'unlocked-changes)
 								  ((string-equal "Missing" string-state) 'needs-patch)
 								  ((string-equal "Not in View" string-state) 'missing)))
 				(if state 
@@ -727,7 +743,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
   "Determine the state of the file.  See vc-state for more info"
   (interactive "fFile:")
   (if  (local-variable-p 'vc-dir-state-output-buffer)
-	  (vc-starteam-dir-state dir)
+	  (vc-starteam-dir-state (file-name-directory (expand-file-name ufile)))
 	(vc-starteam-state-single-file ufile)))
 
 (defun vc-starteam-state-single-file (ufile)
@@ -788,7 +804,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 							 ((string-equal "Out of Date" string-state) 'needs-patch)
 							 ((string-equal "Unknown" string-state) 'needs-merge) 
 							 ((string-equal "Current" string-state) 'up-to-date)
-							 ((string-equal "Modified" string-state) 'edited)
+							 ((string-equal "Modified" string-state) 'unlocked-changes)
 							 ((string-equal "Missing" string-state) 'needs-patch)
 							 ((string-equal "Not in View" string-state) 'missing)))
 					  (vc-starteam-setprop fullpath 'vc-state rtnval)
@@ -1562,18 +1578,23 @@ force:
   (vc-starteam-perform-lock-operation t) ; unlock
   )
 
-(defun vc-starteam-perform-lock-operation (&optional unlock)
-  "Lock the file in the current buffer
+(defun vc-starteam-perform-lock-operation-on-file (ufile &optional unlock break)
+  "Lock the UFILE
 
-unlock:
-   if non-nil, will unlock the file instead of locking it"
-  (let* ((command "lck")
-		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-		 (dir (car dir-and-file))
-		 (file (cadr dir-and-file))
-		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-		 (lock-operation (if unlock "-u" "-l"))
-		 (read-write-operation (if vc-starteam-keep-unlocked-files-read-only 
+UNLOCK:
+   if non-nil, will unlock the file instead of locking it
+
+BREAK:
+  if non-nil, will add -break to the lck command, breaking the currently held lock"
+  (let*  
+	  ((command "lck")
+	   (fullpath (expand-file-name ufile))
+	   (dir (file-name-directory fullpath))
+	   (file (file-name-nondirectory fullpath))
+	   (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+	   (lock-operation (if unlock "-u" "-l"))
+	   (break-operation (if break "-break" nil))
+	   (read-write-operation (if vc-starteam-keep-unlocked-files-read-only 
 								   ;; set read-only status as appropriate
 								   (if unlock "-ro" "-rw")
 								 ;; else don't modify read-only status
@@ -1583,7 +1604,7 @@ unlock:
 
     (message "%s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
-    (setq output-buffer (vc-starteam-execute nil command "LOCK FILE" path file lock-operation read-write-operation (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
+    (setq output-buffer (vc-starteam-execute nil command "LOCK FILE" path file break-operation lock-operation read-write-operation (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
 										;(message "FINISHED %s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
     ;; check operation output buffer for errors
@@ -1614,6 +1635,22 @@ unlock:
     (revert-buffer t t)					; to refresh read-only status
     (message "%s is now: %s" file operation-success-magic-text)
     ))
+)
+(defun vc-starteam-perform-lock-operation (&optional unlock break)
+  "Lock or unlock the file in the current buffer
+
+unlock:
+   if non-nil, will unlock the file instead of locking it
+
+break:
+  if non-nil, will add -break to the lck command, breaking the currently held lock"
+  (let* 
+	  ((dir-and-file (vc-starteam-current-buffer-dir-and-file)))
+	(vc-starteam-perform-lock-operation-on-file ( concat (car dir-and-file) (cadr dir-and-file)) unlock break)))
+
+
+
+
 
 (defun vc-starteam-dired-revert (&optional arg noconfirm)
   "Reload the current buffer"
@@ -2283,3 +2320,13 @@ prints it to the mini-buffer"
 	(message "vc-starteam-dired-state-info %S %S %s" bobfile state rtnval)
 	rtnval))
 
+(defun vc-starteam-omit-file (file)
+  (interactive "sFile:")
+  (setq dired-omit-files
+		(concat dired-omit-files "\\|^" file "$"))
+
+)
+
+(defun vc-starteam-omit-marked-files ()
+  (interactive)
+  (mapcar (lambda (f) (vc-starteam-omit-file (file-name-nondirectory f)))  (dired-get-marked-files)))
