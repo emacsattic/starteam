@@ -5,7 +5,7 @@
 ;;; Copyright (C) 1999 Matthew O. Smith
 
 ;; Filename: vc-starteam.el
-;; Maintainer: Matthew O. Smith <m0smith at yahoo dot com>
+;; Maintainer: Matthew O. Smith <m0smith at yahoo dot com> 
 ;; Author: $Author$
 ;; Last-Updated: $Date$ 
 ;; Version: $Revision$
@@ -238,7 +238,9 @@ Each function is called with the arguments FILES and REASON.")
 (defun vc-starteam-dir-state ( udir )
   "Get the state of each file in UDIR.  Set the following properties:
    vc-backend
-   vc-state"
+   vc-state
+
+  "
   (interactive "DDir Name:")
   (let* ((command "list")
 		 (fullpath (expand-file-name udir))
@@ -246,38 +248,46 @@ Each function is called with the arguments FILES and REASON.")
 		 (default-directory dir)
 		 (file "*")
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-		 (string-state "Unknown")
-		 (output-buffer))
-
-    (message "Checking status of directory %s ..." fullpath)
-
-    (save-excursion
-      (setq output-buffer 
-			(vc-starteam-execute nil command 
-			      "GET FILE STATUS" path file "-cf"
-			      "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
-     
-	  (set-buffer output-buffer)
+		 (string-state "Unknown"))
+	;;(message "Checking status of directory %s from buffer %s ..." fullpath (current-buffer))
+	(if (not (local-variable-p 'vc-dir-state-output-buffer))
+		(progn
+		  (make-local-variable 'vc-dir-state-output-buffer)
+		  
+		  (save-excursion
+			;;(message "Fetching state of %s" fullpath)
+			(setq vc-dir-state-output-buffer
+				  (vc-starteam-execute nil command 
+									   "GET FILE STATUS" path file "-cf" "-is"
+									   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+	(save-excursion
+	  (set-buffer vc-dir-state-output-buffer)
 	  (goto-char (point-min))      
-	  (while (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+	  (if (re-search-forward (directory-file-name fullpath) nil t)
+		  (let ((start (point))
+				(end (point-max)))
+			(if (re-search-forward "^Folder:" nil t) (setq end (point)))
+			(goto-char start)
+			(while (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
 										; return the matched string
-		  (progn
-			(setq string-state (buffer-substring-no-properties 
-								(match-beginning 1) (match-end 1)))
-			(setq state (cond ((string-equal "Merge" string-state) 'needs-merge)
-							  ((string-equal "Out of Date" string-state) 'needs-patch)
-							  ((string-equal "Unknown" string-state) nil)
-							  ((string-equal "Current" string-state) 'up-to-date)
-							  ((string-equal "Modified" string-state) 'edited)
-							  ((string-equal "Missing" string-state) 'needs-patch)
-							  ((string-equal "Not in View" string-state) nil)))
-			(if state 
-				(let* ((p (progn (move-to-column 63) (point)))
-					   (file (progn (end-of-line) (expand-file-name (buffer-substring-no-properties p (point))))))
-					   (vc-file-setprop file 'vc-backend 'STARTEAM)
-					   (vc-file-setprop file 'vc-state state)
-					   (message "State: %s %s" file state))
-			  (end-of-line)))))))
+			  (progn
+				(setq string-state (buffer-substring-no-properties 
+									(match-beginning 1) (match-end 1)))
+				(setq state (cond ((string-equal "Merge" string-state) 'needs-merge)
+								  ((string-equal "Out of Date" string-state) 'needs-patch)
+								  ((string-equal "Unknown" string-state) nil)
+								  ((string-equal "Current" string-state) 'up-to-date)
+								  ((string-equal "Modified" string-state) 'edited)
+								  ((string-equal "Missing" string-state) 'needs-patch)
+								  ((string-equal "Not in View" string-state) nil)))
+				(if state 
+					(let* ((p (progn (move-to-column 63) (point)))
+						   (default-directory fullpath)
+						   (file (progn (end-of-line) (expand-file-name (buffer-substring-no-properties p (point))))))
+					  (vc-file-setprop file 'vc-backend 'STARTEAM)
+					  (vc-file-setprop file 'vc-state state))
+					  ;;(message "State: %s %s" file state))
+				  (end-of-line)))))))))
   
 
 (defun vc-starteam-state (ufile)
@@ -291,27 +301,28 @@ Each function is called with the arguments FILES and REASON.")
 		 (output-buffer))
 
     (message "Checking status of %s ..." fullpath)
-
-    (save-excursion
-      (setq output-buffer 
-			(vc-starteam-execute nil command 
-			      "GET FILE STATUS" path file
-			      "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
-     
-	  (set-buffer output-buffer)
-	  (goto-char (point-min))      
-	  (if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+	(if  (local-variable-p 'vc-dir-state-output-buffer)
+		(vc-starteam-dir-state dir)
+	  (save-excursion
+		(setq output-buffer 
+			  (vc-starteam-execute nil command 
+								   "GET FILE STATUS" path file
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+		
+		(set-buffer output-buffer)
+		(goto-char (point-min))      
+		(if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
 										; return the matched string
-		  (progn
-			(setq string-state (buffer-substring-no-properties 
-								(match-beginning 1) (match-end 1)))
-			(cond ((string-equal "Merge" string-state) 'needs-merge)
-				  ((string-equal "Out of Date" string-state) 'needs-patch)
-				  ((string-equal "Unknown" string-state) nil)
-				  ((string-equal "Current" string-state) 'up-to-date)
-				  ((string-equal "Modified" string-state) 'edited)
-				  ((string-equal "Missing" string-state) 'needs-patch)
-				  ((string-equal "Not in View" string-state) nil)))))))
+			(progn
+			  (setq string-state (buffer-substring-no-properties 
+								  (match-beginning 1) (match-end 1)))
+			  (cond ((string-equal "Merge" string-state) 'needs-merge)
+					((string-equal "Out of Date" string-state) 'needs-patch)
+					((string-equal "Unknown" string-state) nil)
+					((string-equal "Current" string-state) 'up-to-date)
+					((string-equal "Modified" string-state) 'edited)
+					((string-equal "Missing" string-state) 'needs-patch)
+					((string-equal "Not in View" string-state) nil))))))))
 				  
 (defun vc-starteam-print-log (ufile)
   "Get the status of FILE"
