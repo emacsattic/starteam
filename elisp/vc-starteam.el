@@ -227,12 +227,30 @@ Each function is called with the arguments FILES and REASON.")
 (defvar vc-starteam-menu-map (make-sparse-keymap "STARTEAM"))
 
 
+(defvar vc-starteam-prop-obarray (make-vector 127 0)
+  "Obarray for per-file properties.")
+
+
+(defun vc-starteam-setprop (file property value)
+  "Set per-file VC PROPERTY for FILE to VALUE."
+  (vc-file-setprop file property value)
+  (put (intern file vc-starteam-prop-obarray) property value))
+
+(defun vc-starteam-getprop (file property)
+  "Get per-file VC PROPERTY for FILE."
+  (get (intern file vc-starteam-prop-obarray) property))
+
+
 (defun vc-starteam-registered (file)
   "Check to see if a file is to be used under StarTeam"
   (interactive "fFile Name:")
-  (let ((state (vc-file-getprop file 'vc-state)))
+  (message "vc-starteam-registered? %s" file)
+  (let ((state (vc-starteam-getprop file 'vc-state)))
 	(if state t
-	  (if  (vc-starteam-responsible-p file) (vc-starteam-state file) nil))))
+	  (if (vc-starteam-responsible-p file)
+		  (vc-starteam-state file)
+		nil))))
+	  
 
 
 (defun vc-starteam-responsible-p (ufile)
@@ -254,6 +272,8 @@ Each function is called with the arguments FILES and REASON.")
 		 (dired-buffer (current-buffer))
 		 (missing-files)
 		 (fullpath (expand-file-name udir))
+		 (fullpath-regexp (replace-regexp-in-string "[/\\]" "[/\\\\]"
+													(directory-file-name fullpath)))
 		 (dir  fullpath)
 		 (default-directory dir)
 		 (tempdir)
@@ -318,8 +338,8 @@ Each function is called with the arguments FILES and REASON.")
 															  (concat tempdir tempfile)
 															  'vc-starteam-missing-file-name-handler))))
 					  (message "handler alist: %s" file-name-handler-alist)
-					  (vc-file-setprop (concat tempdir tempfile) 'vc-backend 'STARTEAM)
-					  (vc-file-setprop (concat tempdir tempfile) 'vc-state 'needs-patch)
+					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-backend 'STARTEAM)
+					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-state 'needs-patch)
 					  (dired-add-entry  
 					   (concat tempdir tempfile) nil t)))
 			  (forward-line 1)))
@@ -328,13 +348,13 @@ Each function is called with the arguments FILES and REASON.")
 			  (dired-build-subdir-alist)))))
 	(save-excursion
 	  (set-buffer vc-dir-state-output-buffer)
-	  (goto-char (point-min))      
-	  (if (re-search-forward (directory-file-name fullpath) nil t)
+	  (goto-char (point-min))
+	  (if (re-search-forward fullpath-regexp nil t)
 		  (let ((start (point))
 				(end (point-max)))
 			(if (re-search-forward "^Folder:" nil t) (setq end (point)))
 			(goto-char start)
-			(while (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+			(while (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" end t)
 										; return the matched string
 			  (progn
 				(setq string-state (buffer-substring-no-properties 
@@ -369,8 +389,9 @@ Each function is called with the arguments FILES and REASON.")
 						   (default-directory fullpath)
 						   (file (progn (end-of-line) (expand-file-name (buffer-substring-no-properties p (point))))))
 
-					  (vc-file-setprop file 'vc-backend 'STARTEAM)
-					  (vc-file-setprop file 'vc-state state))
+					  (vc-starteam-setprop file 'vc-backend 'STARTEAM)
+					  (vc-starteam-setprop file 'vc-state state)
+					  (message "vc-starteam-setprop %s 'vc-state %s" file state))
 					  ;;(message "State: %s %s" file state))
 				  (end-of-line)))))))))
   
@@ -411,6 +432,36 @@ OPERATION."
 			(vc-starteam-execute nil command 
 								   "ADD FILE" path file
 								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+
+(defun vc-starteam-revert (ufile &optional contents-done)
+  " Revert FILE back to the current workfile version.  If optional
+   arg CONTENTS-DONE is non-nil, then the contents of FILE have
+   already been reverted from a version backup, and this function
+   only needs to update the status of FILE within the backend."
+  (interactive)
+
+  (unless contents-done
+	(let* ((command "co")
+		 (fullpath (expand-file-name ufile))
+		 (dir (file-name-directory fullpath))
+		 (file (file-name-nondirectory fullpath))
+		 (output-buffer)
+		 (must-make-file-read-only vc-starteam-keep-unlocked-files-read-only)
+		 (unlock-operation (if must-make-file-read-only "-u" "-l"))
+		 (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
+		 (forced "-o")
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+
+    (save-excursion 
+      (message "Reverting file %s%s ..." dir file)
+
+	  (setq output-buffer 
+			(vc-starteam-execute nil command 
+								   "REVERT FILE" path file
+								   unlock-operation
+								   read-write-operation
+								   forced
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))))))
 
 
 
@@ -460,6 +511,12 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
 
 
+(defun vc-starteam-state-heuristic (ufile)
+  (let ((state (vc-starteam-getprop ufile 'vc-state)))
+	(if state state 'up-to-date )
+))
+
+
 (defun vc-starteam-state (ufile)
   "Determine the state of the file.  See vc-state for more info"
   (let* ((command "list")
@@ -483,7 +540,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 		(goto-char (point-min))      
 		(if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
 										; return the matched string
-			(progn
+			(let (rtnval)
 			  (setq string-state (buffer-substring-no-properties 
 								  (match-beginning 1) (match-end 1)))
 			  (setq locking-user (let* ((start (progn (move-to-column 12) 
@@ -498,7 +555,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 									 nil)))
 										
 								   
-			  (cond (locking-user 								
+			  (setq rtnval (cond (locking-user 								
 					 (if (string-equal locking-user vc-starteam-locking-user)
 						 'edited locking-user))
 					((string-equal "Merge" string-state) 'needs-merge)
@@ -507,7 +564,9 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 					((string-equal "Current" string-state) 'up-to-date)
 					((string-equal "Modified" string-state) 'edited)
 					((string-equal "Missing" string-state) 'needs-patch)
-					((string-equal "Not in View" string-state) nil))))))))
+					((string-equal "Not in View" string-state) nil)))
+			  (vc-starteam-setprop fullpath 'vc-state rtnval)
+			  rtnval))))))
 				  
 (defun vc-starteam-print-log (ufile)
   "Get the status of FILE"
@@ -554,15 +613,18 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 
 (defun vc-starteam-workfile-version (file)
   (let ((buf "*vc-diff*")
+		(stored-rev (vc-starteam-getprop file 'vc-workfile-version))
 		(rev))
-	(save-excursion
-	  (vc-starteam-diff file)
-	  (set-buffer buf)
-	  (goto-char(point-min))
-	  (if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
-		  (setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
-		(error "Error checking status; see buffer %s" buf))
-	  rev)))
+	(if stored-rev stored-rev
+	  (save-excursion
+		(vc-starteam-diff file)
+		(set-buffer buf)
+		(goto-char(point-min))
+		(if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
+			(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+		  (error "Error checking status; see buffer %s" buf))
+		(vc-starteam-setprop file 'vc-workfile-version rev)
+		rev))))
 		
 
 (defun vc-starteam-checkout-model (file)
@@ -835,6 +897,8 @@ force - if non-nil, forces the checkout"
 		  (setq tdir (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
 		(error "Error checking status; see buffer %s" output-buffer))
 	(if destfile (rename-file (concat tdir "/" file) destfile t)))))
+
+
 
 
 
