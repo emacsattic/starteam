@@ -32,8 +32,10 @@
 ;; Contributors:
 ;;   Matthew O. Smith
 ;;   Christopher J. Kline
-;;   Stephan Zitz <szitz at globalscape dot com>
+;;   Stephan Zitz <szitz at globalscape dot com >
 ;;      Added support for mapping cygwin drives under Win32 and XEmacs
+;;   Knut Forkalsrud < knut at cj dot com >
+;;      Added some much needed improvements
 ;;
 ;;
 ;;   This file implements many of the features of VC for use with
@@ -140,6 +142,7 @@
 ;;          resumed using it, so Matthew is taking over maintenance of starteam.el
 ;; 0.7
 ;;        - Added support for cygwin under XEmacs
+;;        - Various changes made by Knut Forkalsrud.
 
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -158,10 +161,12 @@
 (eval-when-compile
   (progn
     (require 'dired)
-    (require 'string)
+	(if (featurep 'xemacs)
+		(require 'string))
     (require 'vc)))
 (require 'dired)
-(require 'string)
+(if (featurep 'xemacs)
+	(require 'string))
 (require 'vc)
 
 (defvar starteam-map-cygdrive nil "Should /cygdrive/_DRIVE_/ be mapped to _DRIVE_:")
@@ -406,6 +411,8 @@ force - if non-nil, forces the checkout"
       (message "Checked out dir %s ..." dir) 
       ))) 
 
+;; knut 24 JAN 2002 : Added -o switch to make sure that the temporary
+;; file is always checked out
 (defun starteam-checkout-temp-file ()
   "Checkout the file in the current buffer into a temp dir.  Return the path name of the temp file"
   (interactive)
@@ -414,7 +421,7 @@ force - if non-nil, forces the checkout"
 	;;(dir (file-name-directory (buffer-file-name)))
 	(no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
 	(no-map-dir (file-name-directory (buffer-file-name)))
-	(file (buffer-name))
+	(file (file-name-nondirectory (buffer-name)))
 ;;	(path (starteam-get-starteam-path-from-local-path dir)))
 	(path (starteam-get-starteam-path-from-local-path no-map-dir)))
 
@@ -429,7 +436,7 @@ force - if non-nil, forces the checkout"
 	     dir file temp-directory dir file)
     (save-excursion
       (set-buffer (starteam-execute command "TEMPORARY CHECK OUT OF FILE" path file 
-				    "-rp" temp-directory))
+				    "-o" "-rp" temp-directory))
       (goto-char (point-min))
       (if (re-search-forward "(working dir: \\(.*\\))" nil t)
 	  (concat (buffer-substring-no-properties (match-beginning 1)
@@ -750,10 +757,10 @@ unlock:
 sFilter [MCONIGU]*")
   (let* ((command "list")
 	 (dir (expand-file-name rawdir))
-	 (path (starteam-get-starteam-path-from-local-path dir)))
+	 (path (starteam-get-starteam-path-from-local-path (expand-file-name dir))))
      (message "Checking directory %s (with filter)..." dir )
 
-     (switch-to-buffer (starteam-execute command filter path "-is" "-filter" filter  ) t)
+     (switch-to-buffer (starteam-execute command filter path "-is" "-filter" filter  "-fp" (expand-file-name dir)) t)
        
      ;;****************************************
      ;;                                        
@@ -766,7 +773,7 @@ sFilter [MCONIGU]*")
        (delete-matching-lines "^Current"))
 
      (starteam-remove-empty-directory-listings)
-     (cd dir)
+     (cd (expand-file-name dir))
      (starteam-dired-mode)     
      ))
 
@@ -1276,3 +1283,5 @@ prints it to the mini-buffer"
 
 (add-hook 'ediff-cleanup-hook '(lambda nil
 				 (bury-buffer ediff-buffer-B)))
+
+(provide 'starteam)
