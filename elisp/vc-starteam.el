@@ -270,23 +270,27 @@ Each function is called with the arguments FILES and REASON.")
   (if vc-starteam-debug (message "Getting property:%s for file:%s" property file))
   (get (intern file vc-starteam-prop-obarray) property))
 
-										;****************************************
-										;                                        
-										;  vc-starteam-registered 
-										;
-										;  Determine if the the file is regestered with StarTeam.  The file is
-										;  registered if any of these conditions hold:
-										;
-										; 1 - The vc-state property exists and is not 'missing
-										; 2 - StarTeam is responsible and the state  is not nil or 'missing
-										;                                        
-										;****************************************
+;****************************************
+;                                        
+;  vc-starteam-registered 
+;
+;  Determine if the the file is regestered with StarTeam.  The file is
+;  registered if any of these conditions hold:
+;
+; 1 - The vc-state property exists and is not 'missing
+; 2 - StarTeam is responsible and the state  is not nil or 'missing
+;                                        
+;****************************************
 (defun vc-starteam-registered (file)
   "Check to see if a file is to be used under StarTeam"
   (interactive "fFile Name:")
   (if vc-starteam-debug (message "vc-starteam-registered %s" file))
   (let ((state (vc-starteam-getprop file 'vc-state)))
-	(if (equal state 'missing) nil
+	(if vc-starteam-debug (message "vc-starteam-registered %s state: %s" file state))
+	(if (equal state 'missing) 
+		(progn 
+		  (find-file-other-window file) 
+		  nil)
 	  (if  state  t
 		(if (vc-starteam-responsible-p file)
 			(progn
@@ -295,11 +299,11 @@ Each function is called with the arguments FILES and REASON.")
 		  nil)))))
 	  
 
-										;****************************************
-										;                                        
-										;  vc-starteam-responsible-p
-										;                                        
-										;****************************************
+;****************************************
+;                                        
+;  vc-starteam-responsible-p
+;                                        
+;****************************************
 (defun vc-starteam-responsible-p (ufile)
   "Determine if this file is in StarTeam. See \\[vc-starteam-get-vc-starteam-path-from-local-path] for more info"
   (interactive "fFile Name:")
@@ -608,9 +612,8 @@ OPERATION."
 										;                                        
 										;****************************************
 (defun vc-starteam-register (ufile &optional rev comment)
-  "Add the file in the current buffer"
-  (interactive)
-
+  "Add the file UFILE to the starteam repository"
+  (interactive "f")
   (let* ((command "add")
 		 (fullpath (expand-file-name ufile))
 		 (dir (file-name-directory fullpath))
