@@ -136,6 +136,7 @@
 ;;        - Merge files as needed
 ;;        - Added vc-starteam-locking-user so that we can tell if
 ;;          the current user has the file locked.
+;;        - Cache the status from dired mode
 ;;          
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -222,7 +223,7 @@ is \"Branch_A\", not \"Main/Branch_A\":
 
 (Note: the previous example assumes that the working folder for the
 Branch_A view has been set to \"C:/Starteam/temp/branchA\")
-")
+\"")
 
 (defvar vc-starteam-post-checkin-functions nil
   "A list of functions to call after a successful checkin.
@@ -240,27 +241,49 @@ Each function is called with the arguments FILES and REASON.")
 
 (defun vc-starteam-setprop (file property value)
   "Set per-file VC PROPERTY for FILE to VALUE."
+  (if vc-starteam-debug (message "Setting property:%s to value:%s for file:%s" property value file))
   (vc-file-setprop file property value)
   (put (intern file vc-starteam-prop-obarray) property value))
 
 (defun vc-starteam-getprop (file property)
   "Get per-file VC PROPERTY for FILE."
+  (if vc-starteam-debug (message "Getting property:%s for file:%s" property file))
   (get (intern file vc-starteam-prop-obarray) property))
 
-
+;****************************************
+;                                        
+;  vc-starteam-registered 
+;
+;  Determine if the the file is regestered with StarTeam.  The file is
+;  registered if any of these conditions hold:
+;
+; 1 - The vc-state property exists and is not 'missing
+; 2 - StarTeam is responsible and the state  is not nil or 'missing
+;                                        
+;****************************************
 (defun vc-starteam-registered (file)
   "Check to see if a file is to be used under StarTeam"
   (interactive "fFile Name:")
+  (if vc-starteam-debug (message "vc-starteam-registered %s" file))
   (let ((state (vc-starteam-getprop file 'vc-state)))
-	(if state t
-	  (if (vc-starteam-responsible-p file)
-		  (vc-starteam-state file)
-		nil))))
+	(if (equal state 'missing) nil
+	  (if  state  t
+		(if (vc-starteam-responsible-p file)
+			(progn
+			  (setq state (vc-starteam-state file))
+			  (if (equal state 'missing) nil state))
+		  nil)))))
 	  
 
-
+;****************************************
+;                                        
+;  vc-starteam-responsible-p
+;                                        
+;****************************************
 (defun vc-starteam-responsible-p (ufile)
+"Determine if this file is in StarTeam. See \\[vc-starteam-get-vc-starteam-path-from-local-path] for more info"
   (interactive "fFile Name:")
+  (if vc-starteam-debug (message "vc-starteam-responsible-p %s" ufile))
   (if (string-match dired-omit-files (file-name-nondirectory ufile))
 	  nil
 	(let* ((dir (file-name-directory (expand-file-name ufile)))
@@ -522,7 +545,7 @@ Each function is called with the arguments FILES and REASON.")
 									   'edited locking-user))
 								  ((string-equal "Merge" string-state) 'needs-merge)
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
-								  ((string-equal "Unknown" string-state) nil)
+								  ((string-equal "Unknown" string-state) 'missing)
 								  ((string-equal "Current" string-state) 'up-to-date)
 								  ((string-equal "Modified" string-state) 'edited)
 								  ((string-equal "Missing" string-state) 'needs-patch)
@@ -558,7 +581,11 @@ OPERATION."
         (inhibit-file-name-operation operation))
     (apply operation args)))
 
-
+;****************************************
+;                                        
+;  vc-starteam-register
+;                                        
+;****************************************
 (defun vc-starteam-register (ufile &optional rev comment)
   "Add the file in the current buffer"
   (interactive)
@@ -573,10 +600,13 @@ OPERATION."
     (save-excursion 
       (message "Adding in file %s%s ..." dir file)
 
+	  
 	  (setq output-buffer 
 			(vc-starteam-execute nil command 
 								   "ADD FILE" path file
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+	  (vc-starteam-setprop (concat dir file) 'vc-state 'up-to-date)
+)))
 
 (defun vc-starteam-revert (ufile &optional contents-done)
   " Revert FILE back to the current workfile version.  If optional
@@ -657,19 +687,25 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 
 
 (defun vc-starteam-state-heuristic (ufile)
+  (if vc-starteam-debug (message "vc-starteam-state-heuristic %s" ufile))
   (let ((state (vc-starteam-getprop ufile 'vc-state)))
 	(if state state 'up-to-date )
 ))
 
-
+;****************************************
+;                                        
+;  vc-starteam-state
+;                                        
+;****************************************
 (defun vc-starteam-state (ufile)
   "Determine the state of the file.  See vc-state for more info"
-  (let* ((command "list")
+  (let* ((command "hist")
 		 (fullpath (expand-file-name ufile))
 		 (dir (file-name-directory fullpath))
 		 (file (file-name-nondirectory fullpath))
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
 		 (string-state "Unknown")
+		 (locking-user)
 		 (output-buffer))
 
     (message "Checking status of %s ..." fullpath)
@@ -678,43 +714,57 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 	  (save-excursion
 		(setq output-buffer 
 			  (vc-starteam-execute nil command 
-								   "GET FILE STATUS" path file
+								   (concat "GET FILE STATUS using " command)
+								   path file
 								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
 		
 		(set-buffer output-buffer)
 		(goto-char (point-min))      
-		(if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+		;; Figure out who is locking the file
+		(if (re-search-forward "^Locked by: \\([a-zA-Z].*\\)$" nil t)
+			(progn
+			  (setq locking-user (buffer-substring-no-properties 
+								  (match-beginning 1) (match-end 1)))
+			  (if vc-starteam-debug (message "Locked by=%s" locking-user))))
+
+		;; Get the status
+		(if (re-search-forward "^Status: \\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
 										; return the matched string
 			(let (rtnval)
 			  (setq string-state (buffer-substring-no-properties 
 								  (match-beginning 1) (match-end 1)))
-			  (setq locking-user (let* ((start (progn (move-to-column 12) 
-													  (point)))
-										(end (progn (move-to-column 26)
-													(point)))
-										(text (buffer-substring-no-properties start end)))
-								   (message "Looking for lock in %s" text)
-								   (if (string-match "^ *\\([^ ].*?\\) *$" text)
-									   (substring text (match-beginning 1)
-												  (match-end 1))
-									 nil)))
-										
 								   
-			  (setq rtnval (cond (locking-user 								
-					 (if (string-equal locking-user vc-starteam-locking-user)
-						 'edited locking-user))
-					((string-equal "Merge" string-state) 'needs-merge)
-					((string-equal "Out of Date" string-state) 'needs-patch)
-					((string-equal "Unknown" string-state) nil)
-					((string-equal "Current" string-state) 'up-to-date)
-					((string-equal "Modified" string-state) 'edited)
-					((string-equal "Missing" string-state) 'needs-patch)
-					((string-equal "Not in View" string-state) 'missing)))
+			  (setq rtnval 
+					(cond  
+					 ((and locking-user (not (string-equal locking-user 
+										 vc-starteam-locking-user)))
+					  locking-user)
+					 ((and locking-user (string-equal locking-user 
+										 vc-starteam-locking-user))
+					  'edited)
+					 ((string-equal "Merge" string-state) 'needs-merge)
+					 ((string-equal "Out of Date" string-state) 'needs-patch)
+					 ((string-equal "Unknown" string-state) 'missing)
+					 ((string-equal "Current" string-state) 'up-to-date)
+					 ((string-equal "Modified" string-state) 'edited)
+					 ((string-equal "Missing" string-state) 'needs-patch)
+					 ((string-equal "Not in View" string-state) 'missing)))
 			  (vc-starteam-setprop fullpath 'vc-state rtnval)
+			  (if vc-starteam-debug (message "Status=%s" rtnval))
+			  (if (re-search-forward "^Revision: \\([0-9][0-9]*\\)" nil t)
+				  (let ((revision))
+					(setq revision (buffer-substring-no-properties 
+									(match-beginning 1) (match-end 1)))
+					(vc-starteam-setprop file 'vc-workfile-version revision)
+					(if vc-starteam-debug (message "Revision=%s" revision))))
 			  rtnval))))))
-				  
+;****************************************
+;                                        
+;  vc-starteam-print-log
+;                                        
+;****************************************
 (defun vc-starteam-print-log (ufile)
-  "Get the status of FILE"
+  "Get the revision history log of FILE"
   (interactive "fFile Name:")
   (let* ((command "hist")
 		 (fullpath (expand-file-name ufile))
@@ -759,17 +809,29 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 (defun vc-starteam-workfile-version (file)
   "Get the working revision of FILE"
   (let ((buf "*vc-diff*")
+        (visiting-buffer (find-buffer-visiting file))
 		(stored-rev (vc-starteam-getprop file 'vc-workfile-version))
 		(rev))
+	;; Only do anything if we are responsible for this file
 	(if (vc-starteam-responsible-p file)
+		;; If we already know the revision number, use it
 		(if stored-rev stored-rev
+		  ;; Check to see if the revision number is in expanded format
 		  (save-excursion
-			(vc-starteam-diff file)
-			(set-buffer buf)
+			(if vc-starteam-debug (message "Buffer:%s is visiting file:%s" visiting-buffer file))
+			(set-buffer visiting-buffer)
 			(goto-char(point-min))
-			(if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
+			(if (re-search-forward "[$]Revision:\\s-*\\([0-9]+\\)[$]" nil t)
 				(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
-			  (error "Error checking status; see buffer %s" buf))
+			  ;; Otherwise get the diff of the file and find the version number
+			  (save-excursion
+				(vc-starteam-diff file)
+				(set-buffer buf)
+				(goto-char(point-min))
+				;; Get the revision number
+				(if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
+					(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+				  (error "Error checking status; see buffer %s" buf))))
 			(vc-starteam-setprop file 'vc-workfile-version rev)
 		rev))
 	  nil)))
@@ -1161,6 +1223,8 @@ force - if non-nil, forces the checkout"
 							(file-name-directory fullpath) file operation-success-magic-text output-buffer)
 				   ;; operation was successful
 				   (message "%s%s successfully %s" (file-name-directory fullpath) file operation-success-magic-text)
+				   ;; Reset the workfile-version
+				   (vc-starteam-setprop (concat (file-name-directory fullpath) file) 'vc-workfile-version nil)
 				   )
 				 
 				 ) ; end save-excursion		      		     
