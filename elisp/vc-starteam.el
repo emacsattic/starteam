@@ -124,6 +124,7 @@
 ;;        - Rename from starteam.el to vc-starteam.el for integration into
 ;;          vc-mode
 ;;        - 554531 - Have get-directory go into a dired mode.
+;;        - register works
 ;;          
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -289,6 +290,27 @@ Each function is called with the arguments FILES and REASON.")
 					  ;;(message "State: %s %s" file state))
 				  (end-of-line)))))))))
   
+
+
+(defun vc-starteam-register (ufile &optional rev comment)
+  "Add the file in the current buffer"
+  (interactive)
+
+  (let* ((command "add")
+		 (fullpath (expand-file-name ufile))
+		 (dir (file-name-directory fullpath))
+		 (file (file-name-nondirectory fullpath))
+		 (output-buffer)
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+
+    (save-excursion 
+      (message "Adding in file %s%s ..." dir file)
+
+	  (setq output-buffer 
+			(vc-starteam-execute nil command 
+								   "ADD FILE" path file
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+
 
 (defun vc-starteam-state (ufile)
   "Determine the state of the file.  See vc-state for more info"
@@ -632,14 +654,15 @@ force - if non-nil, forces the checkout"
 	 (tdir)
 	 )
     
-    (message "Checking out file %s%s rev %s into %s ..." path file rev temp-directory)
+    (message "Checking out file %s%s rev [%s] into %s ..." path file rev temp-directory)
 
     (save-excursion
       (setq output-buffer (vc-starteam-execute nil command "CHECK OUT FILE" path file 
 					    read-write-operation unlock-operation 
 					    "-rp" (if destfile temp-directory 
 								(vc-starteam-get-working-dir-from-local-path dir))
-						(if (string< "" rev)  "-vn")(if (string< "" rev) rev)
+						(if (and rev (string< "" rev))  "-vn")
+						(if (and rev (string< "" rev)) rev)
 					    ;;(if force "-o" nil) ; force checkout
 					    ))
 	  (set-buffer output-buffer)
