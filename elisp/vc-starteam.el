@@ -1077,7 +1077,7 @@ and returns the buffer containing the output of the status check"
     (save-excursion 
       (setq output-buffer (vc-starteam-execute nil command 
 											   "CHECK OUT FILE" path  
-											   "-is" 
+											   "-is" "-filter" "IOU"
 											   (vc-starteam-view-working-dir 
 												(vc-starteam-get-working-dir-from-local-path 
 												 dir)) 
@@ -1464,6 +1464,18 @@ force:
       (vc-starteam-log-mode command files buf force))))
 
 
+(defun vc-starteam-add-file ( ufile )
+  "Add the file in the current buffer"
+  (interactive "f")
+  (let* ((command "add")
+		 (dir (file-name-directory (expand-file-name ufile)))
+		 (file (file-name-nondirectory (expand-file-name ufile)))) 
+	(save-excursion
+      (message "Adding in file %s%s ..." dir file)
+
+      (pop-to-buffer (get-buffer-create "*Vc-Starteam-Log*"))
+      (vc-starteam-log-mode command (list (expand-file-name ufile))))))
+
 (defun vc-starteam-add ()
   "Add the file in the current buffer"
   (interactive)
@@ -1571,7 +1583,7 @@ unlock:
 
     (message "%s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
-    (setq output-buffer (vc-starteam-execute nil command "LOCK FILE" path file lock-operation read-write-operation))
+    (setq output-buffer (vc-starteam-execute nil command "LOCK FILE" path file lock-operation read-write-operation (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
 										;(message "FINISHED %s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
     ;; check operation output buffer for errors
