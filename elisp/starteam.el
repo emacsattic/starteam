@@ -6,9 +6,9 @@
 
 ;; Filename: starteam.el
 ;; Maintainer: Matthew O. Smith <m0smith at yahoo dot com>
-;; Author: Matthew O. Smith
-;; Last-Updated: 08 May 2002
-;; Version: 0.6
+;; Author: $Author$
+;; Last-Updated: $Date$ 
+;; Version: $Revision$
 ;; Keywords: tools
 ;; URL: http://sourceforge.net/projects/starteam-el/
 ;; 
