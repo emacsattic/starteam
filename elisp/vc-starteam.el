@@ -261,14 +261,16 @@ Each function is called with the arguments FILES and REASON.")
 
 (defun vc-starteam-setprop (file property value)
   "Set per-file VC PROPERTY for FILE to VALUE."
-  (if vc-starteam-debug (message "Setting property:%s to value:%s for file:%s" property value file))
-  (vc-file-setprop file property value)
-  (put (intern file vc-starteam-prop-obarray) property value))
+  (let ((expanded-file (expand-file-name file)))
+	(if vc-starteam-debug (message "Setting property:%s to value:%s for file:%s" property value expanded-file))
+	(vc-file-setprop expanded-file property value)
+	(put (intern expanded-file vc-starteam-prop-obarray) property value)))
 
 (defun vc-starteam-getprop (file property)
   "Get per-file VC PROPERTY for FILE."
-  (if vc-starteam-debug (message "Getting property:%s for file:%s" property file))
-  (get (intern file vc-starteam-prop-obarray) property))
+  (let ((expanded-file (expand-file-name file)))
+	(if vc-starteam-debug (message "Getting property:%s for file:%s" property expanded-file))
+	(get (intern expanded-file vc-starteam-prop-obarray) property)))
 
 ;****************************************
 ;                                        
@@ -852,6 +854,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 
 (defun vc-starteam-workfile-version (file)
   "Get the working revision of FILE"
+  (interactive "f")
   (let ((buf "*vc-diff*")
         (visiting-buffer (find-buffer-visiting file))
 		(stored-rev (vc-starteam-getprop file 'vc-workfile-version))
@@ -866,7 +869,10 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 			(set-buffer visiting-buffer)
 			(goto-char(point-min))
 			(if (re-search-forward "[$]Revision:\\s-*\\([0-9]+\\)[$]" nil t)
-				(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+				(progn
+				  (setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+				  (if vc-starteam-debug (message "Rev :%s" rev))
+				  rev)
 			  ;; Otherwise get the diff of the file and find the version number
 			  (if  (eq (vc-starteam-state file) 'missing)
 				  (progn
@@ -882,8 +888,8 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 					  (setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
 					(error "Error checking status; see buffer %s" buf)))
 				(vc-starteam-setprop file 'vc-workfile-version rev)
-				rev)))))
-	nil))
+				rev)))) nil)))
+	
 		  
 		
 
@@ -918,12 +924,14 @@ Returns a string in the form:
 		  vc-starteam-host ":" vc-starteam-port))
 
 
-(defun vc-starteam-check-file-status ()
+(defun vc-starteam-check-file-status (&optional ufile)
   "Checks the status of the file in the current buffer
 and returns the buffer containing the output of the status check"
   (interactive)
   (let* ((command "list")
-		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir-and-file (if ufile (list (file-name-directory (expand-file-name   ufile))
+									   (file-name-nondirectory (expand-file-name   ufile)))
+									   (vc-starteam-current-buffer-dir-and-file)))
 		 (dir (car dir-and-file))
 		 (file (cadr dir-and-file))
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
@@ -940,7 +948,7 @@ and returns the buffer containing the output of the status check"
 	output-buffer 
 	))
 
-(defun vc-starteam-get-file-status-as-string ()
+(defun vc-starteam-get-file-status-as-string (&optional ufile)
   "Calls vc-starteam-check-file-status, then searches the status buffer 
  and returns the file status as one of the following strings:
 
@@ -953,7 +961,7 @@ and returns the buffer containing the output of the status check"
 	 Not in View"
   (interactive)
   (let* ((status-string)
-		 (status-buffer (vc-starteam-check-file-status)))
+		 (status-buffer (vc-starteam-check-file-status ufile)))
 
 	(save-excursion
 	  (set-buffer status-buffer)
@@ -1026,11 +1034,34 @@ and returns the buffer containing the output of the status check"
 		(message "Checked out file %s%s ..." dir file)
 		))
     ))
-
+(defun vc-starteam-add-folder ( udir ) 
+  "Add the directory to the StarTeam repository"               
+  (interactive "DDirectory Name:")
+  (let* ((command "add-folder")               
+         (dir (directory-file-name (expand-file-name udir)) )
+		 (tempdir nil)
+         (path (vc-starteam-get-vc-starteam-path-from-local-path 
+				dir)) 
+		 (new-folder (file-name-nondirectory path))
+		 (parent-path (file-name-directory path))
+         (output-buffer) 
+         ) 
+         
+    (message "Adding folder dir %s to %s..." dir parent-path) 
+        
+    (save-excursion 
+      (setq output-buffer (vc-starteam-execute nil command 
+											   "ADDING FOLDER" parent-path  
+											    nil "-name" new-folder
+											   (vc-starteam-view-working-dir 
+												(vc-starteam-get-working-dir-from-local-path dir))))
+											  
+       
+      (message "Added folder %s." dir))))
 
 
 (defun vc-starteam-checkout-dir-recursive ( udir ) 
-  "Checkout the current directory and all subdirectories.  Review the results in dired mode"               
+  "Checkout the current directory and all subdirectories.  Review the results in dired mode"
   (interactive "DDirectory Name:")
   (let* ((command "co")               
          (buf (current-buffer)) 
@@ -1474,13 +1505,14 @@ force:
     (message "History placed in buffer <%s>" output-buffer)
     ))
 
-(defun vc-starteam-update-status ()
-  "Update the status of the file in the current buffer"
-  (interactive)
+(defun vc-starteam-update-status-of-file (ufile)
+  "Use StarTeam's update status functionality to check the status of a file"
+  (interactive "f")
+  (if vc-starteam-debug (message "vc-starteam-update-status-of-file: update status of %s"
+								 ufile))
   (let* ((command "update-status")
-		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-		 (dir (car dir-and-file))
-		 (file (cadr dir-and-file))
+		 (file (file-name-nondirectory ufile))
+		 (dir (file-name-directory ufile))
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
 		 (output-buffer))
     (message "Updating status of %s%s ..." dir file)
@@ -1489,8 +1521,22 @@ force:
 											 "-v" "-contents" 
 											 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
     (message "Status of %s%s is now: %s" 
-			 dir file (vc-starteam-get-file-status-as-string))
+			 dir file (vc-starteam-get-file-status-as-string ufile))
     ))
+(defun vc-starteam-update-status-vc-dired-mode ()
+  (interactive)
+  (let ((file-list (dired-get-marked-files)))
+	(mapcar (function (lambda(file) (vc-starteam-update-status-of-file file)))
+			file-list)))
+
+(defun vc-starteam-update-status ()
+  "Update the status of the file in the current buffer"
+  (interactive)
+  (if (eq major-mode 'vc-dired-mode) 
+	  (vc-starteam-update-status-vc-dired-mode)
+	(vc-starteam-update-status-of-file (buffer-file-name buf)))
+	
+)
 
 (defun vc-starteam-lock-file ()
   "Lock the file in the current buffer"
@@ -1745,7 +1791,7 @@ args
       )
 
 										;(message "starteam executing [%s %s %s]" (concat vc-starteam-executable " " command " -x -p \"" (vc-starteam-get-login-info) "/" path "\"" ) (vc-starteam-stringlist-to-single-string args) file)
-	(if vc-starteam-debug (message "ARGS=%S" (append (vc-starteam-fix-vc-starteam-args args) (list file))))
+	(if vc-starteam-debug (message "ARGS=%S" (append (vc-starteam-fix-vc-starteam-args args) (if file (list file) nil))))
     (if args 
 										;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname  nil "/C" "echo" "ECHOING: "
 		(apply 'call-process vc-starteam-executable nil bname  nil
@@ -1754,7 +1800,7 @@ args
 			   "-x"						; non-interactive
 			   "-p"
 			   (concat (vc-starteam-get-login-info) "/" path)
-			   (append (vc-starteam-fix-vc-starteam-args args) (list file))
+			   (append (vc-starteam-fix-vc-starteam-args args) (if file (list file) nil))
 			   )
 										;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname nil "/C" "echo" "BOO"
       (apply 'call-process vc-starteam-executable nil bname nil
