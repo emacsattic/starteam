@@ -138,6 +138,8 @@
 ;;        - added starteam-checkout-dir-recursive
 ;;        - Chris Kline no longer has access to Starteam, and Matthew Smith has
 ;;          resumed using it, so Matthew is taking over maintenance of starteam.el
+;; 0.7
+;;        - Added support for cygwin under XEmacs
 
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -163,6 +165,8 @@
 (require 'vc)
 
 (defvar starteam-map-cygdrive nil "Should /cygdrive/_DRIVE_/ be mapped to _DRIVE_:")
+
+(defvar starteam-cygdrive-path "C:\\Cygwin\\" "Path to cygwin")
 
 (defvar starteam-dired-mode-name "Dired under StarTeam" "The name of the dired mode")
 
@@ -406,12 +410,21 @@ force - if non-nil, forces the checkout"
   "Checkout the file in the current buffer into a temp dir.  Return the path name of the temp file"
   (interactive)
   (let* ((command "co")
-	(temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
-	(dir (file-name-directory (buffer-file-name)))
+	;;(temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
+	;;(dir (file-name-directory (buffer-file-name)))
+	(no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
+	(no-map-dir (file-name-directory (buffer-file-name)))
 	(file (buffer-name))
-	(path (starteam-get-starteam-path-from-local-path dir)))
+;;	(path (starteam-get-starteam-path-from-local-path dir)))
+	(path (starteam-get-starteam-path-from-local-path no-map-dir)))
 
-    (save-buffer)
+	(let* ((dir (if starteam-map-cygdrive 
+                    (starteam-remap-cygdrive no-map-dir)
+                  no-map-dir))
+           (temp-directory (if starteam-map-cygdrive
+                               (starteam-unremap-cygdrive no-map-temp-directory)
+                             (no-map-temp-directory))))
+	  (save-buffer)
     (message "Checking out temporary version of file %s%s to %s/%s%s" 
 	     dir file temp-directory dir file)
     (save-excursion
@@ -425,6 +438,7 @@ force - if non-nil, forces the checkout"
 	nil)
       )
     ))
+)
 
 ;; maybe should have starteam-check-file-status return vector of all
 ;; status elements? Then this method could simply check to see if the
@@ -1130,6 +1144,12 @@ with \"letter:\"
 "
   (string-replace-match "^/cygdrive/\\([^/]\\)\\(.*\\)" path "\\1:\\2")
 )
+
+(defun starteam-unremap-cygdrive( path )
+  "Converts a path of type /path/to/cygwin-relative to form /cygwin/c/path/to/cygwin-relative"
+  (concat starteam-cygdrive-path path)
+)
+
 
 (defun starteam-get-working-dir-from-local-path (local-dir)
   "Given a local directory, attempts to determine the starteam working directory
