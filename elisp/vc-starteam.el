@@ -224,8 +224,9 @@ Each function is called with the arguments FILES and REASON.")
 (defun vc-starteam-registered (file)
   "Check to see if a file is to be used under StarTeam"
   (interactive "fFile Name:")
-  
-  (if  (vc-starteam-responsible-p file) (vc-starteam-state file) nil))
+  (let ((state (vc-file-getprop file 'vc-state)))
+	(if state t
+	  (if  (vc-starteam-responsible-p file) (vc-starteam-state file) nil))))
 
 
 (defun vc-starteam-responsible-p (ufile)
@@ -244,9 +245,12 @@ Each function is called with the arguments FILES and REASON.")
   "
   (interactive "DDir Name:")
   (let* ((command "list")
+		 (dired-buffer (current-buffer))
+		 (missing-files)
 		 (fullpath (expand-file-name udir))
 		 (dir  fullpath)
 		 (default-directory dir)
+		 (tempdir)
 		 (file "*")
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
 		 (string-state "Unknown"))
@@ -254,13 +258,68 @@ Each function is called with the arguments FILES and REASON.")
 	(if (not (local-variable-p 'vc-dir-state-output-buffer))
 		(progn
 		  (make-local-variable 'vc-dir-state-output-buffer)
+		  (make-local-variable 'file-name-handler-alist)
 		  
 		  (save-excursion
 			;;(message "Fetching state of %s" fullpath)
 			(setq vc-dir-state-output-buffer
 				  (vc-starteam-execute nil command 
 									   "GET FILE STATUS" path file "-cf" "-is"
-									   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+									   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+			(set-buffer vc-dir-state-output-buffer)
+			(goto-char (point-min))
+
+			(while (not (eobp))
+			  (let* (( next-line-add-newlines nil)
+					 (tempfile)
+					 (tempfile-start-point)
+					 (default-directory)
+					 ( line-start (progn (forward-line 0) (point)))
+					 ( line-end   (progn (end-of-line) (point)))
+					 ( line-text  (buffer-substring line-start line-end)))
+				(if (string-match "^Folder:\\s-*.*dir:\\s-\\(.*\\))$" line-text)
+					(save-excursion
+					  (setq tempdir (substring  line-text (match-beginning 1) 
+												(match-end 1)))
+					  (setq default-directory tempdir)
+					  (set-buffer dired-buffer)
+					  (if (dired-goto-subdir tempdir) 
+						  nil
+						(progn										
+						  (message "adding mama %s" tempdir)
+						  (goto-char (point-min))
+						  (insert "  " tempdir ":\n\n")))))
+				
+				(if (string-match "^Missing"
+								  line-text)
+					(save-excursion
+					  (setq tempfile-start-point 
+							(progn 
+							  (move-to-column 63) 
+							  (point)))
+					  (setq tempfile 
+							(progn
+							  (end-of-line) 
+							  (expand-file-name 
+							   (buffer-substring-no-properties 
+								tempfile-start-point 
+								(point)))))
+					  (set-buffer dired-buffer)
+					  (goto-char (point-min))
+					  (message "adding file %s%s"  tempdir tempfile)
+					  (setq file-name-handler-alist (append file-name-handler-alist
+															 (list (cons
+															  (concat tempdir tempfile)
+															  'vc-starteam-missing-file-name-handler))))
+					  (message "handler alist: %s" file-name-handler-alist)
+					  (vc-file-setprop (concat tempdir tempfile) 'vc-backend 'STARTEAM)
+					  (vc-file-setprop (concat tempdir tempfile) 'vc-state 'needs-patch)
+					  (dired-add-entry  
+					   (concat tempdir tempfile) nil t)))
+			  (forward-line 1)))
+			(save-excursion
+			  (set-buffer dired-buffer)
+			  (dired-build-subdir-alist)))))
 	(save-excursion
 	  (set-buffer vc-dir-state-output-buffer)
 	  (goto-char (point-min))      
@@ -274,22 +333,50 @@ Each function is called with the arguments FILES and REASON.")
 			  (progn
 				(setq string-state (buffer-substring-no-properties 
 									(match-beginning 1) (match-end 1)))
+				(setq locking-user (let* ((start (progn (move-to-column 12) 
+														(point)))
+										  (end (progn (move-to-column 26)
+													  (point)))
+										  (text (buffer-substring-no-properties start end)))
+									 (message "Looking for lock in %s" text)
+									 (if (string-match "^ *\\([^ ].*\\) *$" text)
+										 (substring text (match-beginning 1)
+													(match-end 1))
+									   nil)))
 				(setq state (cond ((string-equal "Merge" string-state) 'needs-merge)
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
 								  ((string-equal "Unknown" string-state) nil)
 								  ((string-equal "Current" string-state) 'up-to-date)
 								  ((string-equal "Modified" string-state) 'edited)
 								  ((string-equal "Missing" string-state) 'needs-patch)
-								  ((string-equal "Not in View" string-state) nil)))
+								  ((string-equal "Not in View" string-state) 'edited)))
 				(if state 
 					(let* ((p (progn (move-to-column 63) (point)))
 						   (default-directory fullpath)
 						   (file (progn (end-of-line) (expand-file-name (buffer-substring-no-properties p (point))))))
+
 					  (vc-file-setprop file 'vc-backend 'STARTEAM)
 					  (vc-file-setprop file 'vc-state state))
 					  ;;(message "State: %s %s" file state))
 				  (end-of-line)))))))))
   
+
+(defun vc-starteam-missing-file-name-handler (operation &rest args )
+  (message "Perfrom %s on %s" operation args)
+  (cond ((eq operation 'insert-directory) (insert (concat "-rw-rw-r--    1 lpmsmith lpmsmith     3349 May 29 13:35 " (file-name-nondirectory (car args) )"\n" )))
+		 (t (vc-starteam-run-real-handler operation args))))
+
+
+(defun vc-starteam-run-real-handler (operation args)
+  "Invoke normal file name handler for OPERATION.
+First arg specifies the OPERATION, remaining ARGS are passed to the
+OPERATION."
+  (let ((inhibit-file-name-handlers
+         (list 'vc-starteam-missing-file-name-handler
+               (and (eq inhibit-file-name-operation operation)
+                    inhibit-file-name-handlers)))
+        (inhibit-file-name-operation operation))
+    (apply operation args)))
 
 
 (defun vc-starteam-register (ufile &optional rev comment)
@@ -309,6 +396,53 @@ Each function is called with the arguments FILES and REASON.")
 	  (setq output-buffer 
 			(vc-starteam-execute nil command 
 								   "ADD FILE" path file
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+
+
+
+(defun vc-starteam-merge (ufile first-version &optional second-version)
+  "Merge changes into current working copy of FILE.
+The changes are between FIRST-VERSION and SECOND-VERSION."
+  (interactive)
+
+  (let* ((command "co")
+		 (fullpath (expand-file-name ufile))
+		 (dir (file-name-directory fullpath))
+		 (file (file-name-nondirectory fullpath))
+		 (output-buffer)
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+
+    (save-excursion 
+      (message "Merging file %s%s ..." dir file)
+
+	  (setq output-buffer 
+			(vc-starteam-execute nil command 
+								   "ADD FILE" path file
+								   "-merge"
+								   "-vn" first-version
+								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+
+
+
+(defun vc-starteam-merge-news (ufile)
+  "Merge changes into current working copy of FILE."
+
+  (interactive)
+
+  (let* ((command "co")
+		 (fullpath (expand-file-name ufile))
+		 (dir (file-name-directory fullpath))
+		 (file (file-name-nondirectory fullpath))
+		 (output-buffer)
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+
+    (save-excursion 
+      (message "Merging file %s%s ..." dir file)
+
+	  (setq output-buffer 
+			(vc-starteam-execute nil command 
+								   "ADD FILE" path file
+								   "-merge"
 								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
 
 
@@ -338,7 +472,20 @@ Each function is called with the arguments FILES and REASON.")
 			(progn
 			  (setq string-state (buffer-substring-no-properties 
 								  (match-beginning 1) (match-end 1)))
-			  (cond ((string-equal "Merge" string-state) 'needs-merge)
+			  (setq locking-user (let* ((start (progn (move-to-column 12) 
+													  (point)))
+										(end (progn (move-to-column 26)
+													(point)))
+										(text (buffer-substring-no-properties start end)))
+								   (message "Looking for lock in %s" text)
+								   (if (string-match "^ *\\([^ ].*\\) *$" text)
+									   (substring text (match-beginning 1)
+												  (match-end 1))
+									 nil)))
+										
+								   
+			  (cond (locking-user locking-user)
+					((string-equal "Merge" string-state) 'needs-merge)
 					((string-equal "Out of Date" string-state) 'needs-patch)
 					((string-equal "Unknown" string-state) nil)
 					((string-equal "Current" string-state) 'up-to-date)
@@ -403,7 +550,7 @@ Each function is called with the arguments FILES and REASON.")
 		
 
 (defun vc-starteam-checkout-model (file)
-  'implicit)
+  'locking)
 
 (defun vc-starteam-get-user ()
   "Get the name of the user for StarTeam"
@@ -767,7 +914,7 @@ force - if non-nil, forces the checkout"
 			   (save-excursion
 				 (setq output-buffer 
 					   (vc-starteam-execute nil command command path file 
-											"-r" reason
+											"-r" (concat "\"" reason "\"")
 											"-rp" 
 											(vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath))
 											(if force "-o" nil)
@@ -1145,7 +1292,7 @@ sFilter [MCONIGU]*")
       (vc-starteam-checkin-file t) nil )
   )
 
-(defun vc-starteam-merge ()
+(defun vc-starteam-merge-current-buffer ()
   "Merge the current buffer with the current version"
   (interactive)
   (let* ((temp-file (vc-starteam-checkout-temp-file)))
