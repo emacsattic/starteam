@@ -1,15 +1,16 @@
 ;;; starteam.el --- VC-type mode for StarTeam
 
+;;; Copyright (C) 2002 Matthew O. Smith
 ;;; Copyright (C) 2001 Nearlife, Inc.
 ;;; Copyright (C) 1999 Matthew O. Smith
 
 ;; Filename: starteam.el
-;; Maintainer: Christopher J. Kline <chris at nearlife dot com>             
-;; Author: Matthew O. Smith <msmith@campuspipeline.com>
-;; Last-Updated: 21 June 2001
-;; Version: 0.5
+;; Maintainer: Matthew O. Smith <m0smith at yahoo dot com>
+;; Author: Matthew O. Smith
+;; Last-Updated: 08 May 2002
+;; Version: 0.6
 ;; Keywords: tools
-;; URL: http://www.media.mit.edu/~ckline/emacs/starteam.el
+;; URL: http://sourceforge.net/projects/starteam-el/
 ;; 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -78,15 +79,16 @@
 
 ;;; History:
 ;;
-;; 0.1    [Matthew O. Smith] 
+;; 0.1    [Matthew O. Smith <m0smith at yahoo dot com>] 
 ;;        A good first cut
 ;;
 ;; 0.2    [Matthew O. Smith] 
-;;        Work on a Solaris box
+;;        Works on a Solaris box
 ;;
-;; 0.3    [Christopher J. Kline] 08 May 2001         
+;; 0.3    [Christopher J. Kline <chris at nearlife dot com>] 08 May 2001 
 ;;        Many changes:
-;;           - Matthew Smith's company no longer uses Starteam; Chris Kline taking over maintenance
+;;           - Matthew Smith's company no longer uses Starteam; Chris Kline taking 
+;;             over maintenance
 ;;           - Improved documentation on variables and methods
 ;;           - Added configurable option to keep unlocked files read-only (check-out 
 ;;             also honors this option)
@@ -98,7 +100,8 @@
 ;;           - Added starteam-unlock-file
 ;;           - Added starteam-menubar-setup to add STARTEAM menu to main menubar
 ;;           - Check for failure of most operations, output descriptive error messages
-;;           - If check-out fails, reason is given and option to force check-out is presented
+;;           - If check-out fails, reason is given and option to force check-out is 
+;;             presented
 ;;           - Most operations now fail gracefully on common failure conditions 
 ;;             (usually when buffer file cannot be reconciled with 
 ;;             starteam-to-directory-alist)
@@ -122,6 +125,11 @@
 ;;        - fixed bug in starteam-dired-mode where "Unknown" status
 ;;          or a "-" in the file mode would cause a "no file this line" 
 ;;          error 
+;;
+;; 0.6    [Matthew O. Smith] 08 May 2002
+;;        - added starteam-checkout-dir-recursive
+;;        - Chris Kline no longer has access to Starteam, and Matthew Smith has
+;;          resumed using it, so Matthew is taking over maintenance of starteam.el
 
 ;; To do:
 ;;    - Have Merge do an optional checkin
@@ -291,35 +299,6 @@ and returns the file status as one of the following strings:
       )
     ))
 
-
-(defun starteam-checkout-dir-recursive ()
-  "Checkout the current directory and all sub directories"
-  (interactive)
-  (let* ((command "co")
-	 (buf (current-buffer))
-	 (dir (expand-file-name default-directory))
-	 (path (starteam-get-starteam-path-from-local-path dir))
-	 (output-buffer)
-	 )
-    
-    (save-excursion 
-      (set-buffer buf)
-      (save-buffer))
-    
-    (message "Checking out dir %s ..." dir )
-
-    (save-excursion
-      (setq output-buffer (starteam-execute command "CHECK OUT FILE" path 
-					    "-is"
-					    "-rp"
-					    (starteam-get-working-dir-from-local-path dir)
-					    ))
-      
-	(message "Checked out dir %s ..." dir)
-	)))
-    
-
-
 (defun starteam-checkout-file (&optional force)
   "Checkout the file in the current buffer
 
@@ -381,6 +360,35 @@ force - if non-nil, forces the checkout"
 	(message "Checked out file %s%s ..." dir file)
 	))
     ))
+
+(defun starteam-checkout-dir-recursive () 
+  "Checkout the current directory and all subdirectories"               
+  (interactive)                                        
+  (let* ((command "co")               
+         (buf (current-buffer)) 
+         (dir (expand-file-name default-directory)) 
+         (path (starteam-get-starteam-path-from-local-path 
+		dir)) 
+         (output-buffer) 
+         ) 
+         
+    (save-excursion  
+      (set-buffer buf)                       
+      (save-buffer)) 
+                                                       
+    (message "Checking out dir %s ..." dir ) 
+        
+    (save-excursion 
+      (setq output-buffer (starteam-execute command 
+					    "CHECK OUT FILE" path  
+                                            "-is" 
+                                            "-rp" 
+                                            (starteam-get-working-dir-from-local-path 
+					     dir) 
+                                            )) 
+       
+      (message "Checked out dir %s ..." dir) 
+      ))) 
 
 (defun starteam-checkout-temp-file ()
   "Checkout the file in the current buffer into a temp dir.  Return the path name of the temp file"
@@ -710,11 +718,12 @@ unlock:
   (interactive "DDirectory Name:")
   (starteam-get-directory-of-files-filtered dir "MGN"))
 
-(defun starteam-get-directory-of-files-filtered (dir filter)
+(defun starteam-get-directory-of-files-filtered (rawdir filter)
   "Get the status of the directory in the current buffer"
   (interactive "DDirectory name:
 sFilter [MCONIGU]*")
   (let* ((command "list")
+	 (dir (expand-file-name rawdir))
 	 (path (starteam-get-starteam-path-from-local-path dir)))
      (message "Checking directory %s (with filter)..." dir )
 
@@ -1220,5 +1229,3 @@ prints it to the mini-buffer"
 
 (add-hook 'ediff-cleanup-hook '(lambda nil
 				 (bury-buffer ediff-buffer-B)))
-
-
