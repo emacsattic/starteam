@@ -29,8 +29,16 @@
 
 ;;; Commentary:
 ;;
+;; Contributors:
+;;   Matthew O. Smith
+;;   Christopher J. Kline
+;;   Stephan Zitz <szitz at globalscape dot com>
+;;      Added support for mapping cygwin drives under Win32 and XEmacs
+;;
+;;
 ;;   This file implements many of the features of VC for use with
 ;;   StarTeam (www.starbase.com), a source control program.
+;;
 ;;
 ;;   ^X-v-v    - Do next action:
 ;;	Current ->     Display the message "Up to Date"
@@ -148,9 +156,13 @@
 (eval-when-compile
   (progn
     (require 'dired)
+    (require 'string)
     (require 'vc)))
 (require 'dired)
+(require 'string)
 (require 'vc)
+
+(defvar starteam-map-cygdrive nil "Should /cygdrive/_DRIVE_/ be mapped to _DRIVE_:")
 
 (defvar starteam-dired-mode-name "Dired under StarTeam" "The name of the dired mode")
 
@@ -1112,6 +1124,13 @@ returns \"test/myview/a/b\"
       path)
     ))
 
+(defun starteam-remap-cygdrive (path)
+  "If the provided path contains \"/cygdrive/letter/\", strip those out and replace
+with \"letter:\"
+"
+  (string-replace-match "^/cygdrive/\\([^/]\\)\\(.*\\)" path "\\1:\\2")
+)
+
 (defun starteam-get-working-dir-from-local-path (local-dir)
   "Given a local directory, attempts to determine the starteam working directory
 based upon the values in starteam-to-directory-alist. If the given directory
@@ -1131,6 +1150,14 @@ and
 
 return \"X:/test\"
 "
+(if starteam-map-cygdrive
+      (starteam-remap-cygdrive (starteam-get-working-dir-from-local-path-no-map local-dir))
+      (starteam-get-working-dir-from-local-path-no-map)
+  )
+)
+
+(defun starteam-get-working-dir-from-local-path-no-map (local-dir)
+  "Perform the starteam-get-working-dir-from-local-path before applying any cygdrive mappings"
   (let* ((working-dir nil)
 	 (still-looking t))
     (mapcar  (lambda (x)
