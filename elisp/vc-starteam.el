@@ -164,11 +164,13 @@
 (eval-when-compile
   (progn
     (require 'dired)
-	(require 'string) ;; Comes from the elib package
+	(if (featurep 'xemacs)
+		(require 'string)) ;; Comes from the elib package
     (require 'vc)))
 (require 'dired)
 (require 'vc)
-(require 'string) ;; Comes from the elib package
+(if (featurep 'xemacs)
+	(require 'string)) ;; Comes from the elib package
 
 (defvar vc-starteam-map-cygdrive nil "Should /cygdrive/_DRIVE_/ be mapped to _DRIVE_:")
 
@@ -266,17 +268,17 @@ Each function is called with the arguments FILES and REASON.")
   (if vc-starteam-debug (message "Getting property:%s for file:%s" property file))
   (get (intern file vc-starteam-prop-obarray) property))
 
-;****************************************
-;                                        
-;  vc-starteam-registered 
-;
-;  Determine if the the file is regestered with StarTeam.  The file is
-;  registered if any of these conditions hold:
-;
-; 1 - The vc-state property exists and is not 'missing
-; 2 - StarTeam is responsible and the state  is not nil or 'missing
-;                                        
-;****************************************
+										;****************************************
+										;                                        
+										;  vc-starteam-registered 
+										;
+										;  Determine if the the file is regestered with StarTeam.  The file is
+										;  registered if any of these conditions hold:
+										;
+										; 1 - The vc-state property exists and is not 'missing
+										; 2 - StarTeam is responsible and the state  is not nil or 'missing
+										;                                        
+										;****************************************
 (defun vc-starteam-registered (file)
   "Check to see if a file is to be used under StarTeam"
   (interactive "fFile Name:")
@@ -291,19 +293,20 @@ Each function is called with the arguments FILES and REASON.")
 		  nil)))))
 	  
 
-;****************************************
-;                                        
-;  vc-starteam-responsible-p
-;                                        
-;****************************************
+										;****************************************
+										;                                        
+										;  vc-starteam-responsible-p
+										;                                        
+										;****************************************
 (defun vc-starteam-responsible-p (ufile)
-"Determine if this file is in StarTeam. See \\[vc-starteam-get-vc-starteam-path-from-local-path] for more info"
+  "Determine if this file is in StarTeam. See \\[vc-starteam-get-vc-starteam-path-from-local-path] for more info"
   (interactive "fFile Name:")
   (if vc-starteam-debug (message "vc-starteam-responsible-p %s" ufile))
   (if (string-match dired-omit-files (file-name-nondirectory ufile))
 	  nil
 	(let* ((dir (file-name-directory (expand-file-name ufile)))
 		   (starteam-path	(vc-starteam-get-vc-starteam-path-from-local-path dir t)))
+	  (if vc-starteam-debug (message "vc-starteam-responsible-p: dir:%S path:%S" dir starteam-path))
 	  starteam-path)))
 
 
@@ -337,7 +340,7 @@ Each function is called with the arguments FILES and REASON.")
 			(setq vc-dir-state-output-buffer
 				  (vc-starteam-execute nil command 
 									   "GET FILE STATUS" path file "-cf" "-is"
-									   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+									   (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
 			(set-buffer vc-dir-state-output-buffer)
 			(goto-char (point-min))
 
@@ -380,15 +383,15 @@ Each function is called with the arguments FILES and REASON.")
 					  (goto-char (point-min))
 					  (message "adding file %s%s"  tempdir tempfile)
 					  (setq file-name-handler-alist (append file-name-handler-alist
-															 (list (cons
-															  (concat tempdir tempfile)
-															  'vc-starteam-missing-file-name-handler))))
+															(list (cons
+																   (concat tempdir tempfile)
+																   'vc-starteam-missing-file-name-handler))))
 					  (message "handler alist: %s" file-name-handler-alist)
 					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-backend 'STARTEAM)
 					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-state 'needs-patch)
 					  (dired-add-entry  
 					   (concat tempdir tempfile) nil t)))
-			  (forward-line 1)))
+				(forward-line 1)))
 			(save-excursion
 			  (set-buffer dired-buffer)
 			  (dired-build-subdir-alist)))))
@@ -414,8 +417,8 @@ Each function is called with the arguments FILES and REASON.")
 									 (if (string-match "^ *\\([^ ].*?\\) *$" text)
 										 (progn
 										   (message "Locking user:[%s]"
-										   (substring text (match-beginning 1)
-													  (match-end 1)))
+													(substring text (match-beginning 1)
+															   (match-end 1)))
 										   (substring text (match-beginning 1)
 													  (match-end 1)))
 									   nil)))
@@ -425,7 +428,7 @@ Each function is called with the arguments FILES and REASON.")
 									   'edited locking-user))
 								  ((string-equal "Merge" string-state) 'needs-merge)
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
-								  ((string-equal "Unknown" string-state) nil)
+								  ((string-equal "Unknown" string-state) 'needs-merge)
 								  ((string-equal "Current" string-state) 'up-to-date)
 								  ((string-equal "Modified" string-state) 'edited)
 								  ((string-equal "Missing" string-state) 'needs-patch)
@@ -438,7 +441,7 @@ Each function is called with the arguments FILES and REASON.")
 					  (vc-starteam-setprop file 'vc-backend 'STARTEAM)
 					  (vc-starteam-setprop file 'vc-state state)
 					  (message "vc-starteam-setprop %s 'vc-state %s" file state))
-					  ;;(message "State: %s %s" file state))
+				  ;;(message "State: %s %s" file state))
 				  (end-of-line)))))))))
   
 
@@ -473,7 +476,7 @@ Each function is called with the arguments FILES and REASON.")
 				  (vc-starteam-execute nil command 
 									   "GET FILE STATUS USING HIST" path file 
 									   "-is"
-									   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+									   (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
 			(set-buffer vc-dir-state-output-buffer)
 			(goto-char (point-min))
 
@@ -516,15 +519,15 @@ Each function is called with the arguments FILES and REASON.")
 					  (goto-char (point-min))
 					  (message "adding file %s%s"  tempdir tempfile)
 					  (setq file-name-handler-alist (append file-name-handler-alist
-															 (list (cons
-															  (concat tempdir tempfile)
-															  'vc-starteam-missing-file-name-handler))))
+															(list (cons
+																   (concat tempdir tempfile)
+																   'vc-starteam-missing-file-name-handler))))
 					  (message "handler alist: %s" file-name-handler-alist)
 					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-backend 'STARTEAM)
 					  (vc-starteam-setprop (concat tempdir tempfile) 'vc-state 'needs-patch)
 					  (dired-add-entry  
 					   (concat tempdir tempfile) nil t)))
-			  (forward-line 1)))
+				(forward-line 1)))
 			(save-excursion
 			  (set-buffer dired-buffer)
 			  (dired-build-subdir-alist)))))
@@ -550,8 +553,8 @@ Each function is called with the arguments FILES and REASON.")
 									 (if (string-match "^ *\\([^ ].*?\\) *$" text)
 										 (progn
 										   (message "Locking user:[%s]"
-										   (substring text (match-beginning 1)
-													  (match-end 1)))
+													(substring text (match-beginning 1)
+															   (match-end 1)))
 										   (substring text (match-beginning 1)
 													  (match-end 1)))
 									   nil)))
@@ -561,7 +564,7 @@ Each function is called with the arguments FILES and REASON.")
 									   'edited locking-user))
 								  ((string-equal "Merge" string-state) 'needs-merge)
 								  ((string-equal "Out of Date" string-state) 'needs-patch)
-								  ((string-equal "Unknown" string-state) 'missing)
+								  ((string-equal "Unknown" string-state) 'needs-merge)
 								  ((string-equal "Current" string-state) 'up-to-date)
 								  ((string-equal "Modified" string-state) 'edited)
 								  ((string-equal "Missing" string-state) 'needs-patch)
@@ -574,7 +577,7 @@ Each function is called with the arguments FILES and REASON.")
 					  (vc-starteam-setprop file 'vc-backend 'STARTEAM)
 					  (vc-starteam-setprop file 'vc-state state)
 					  (message "vc-starteam-setprop %s 'vc-state %s" file state))
-					  ;;(message "State: %s %s" file state))
+				  ;;(message "State: %s %s" file state))
 				  (end-of-line)))))))))
   
 
@@ -583,7 +586,7 @@ Each function is called with the arguments FILES and REASON.")
 (defun vc-starteam-missing-file-name-handler (operation &rest args )
   (message "Perfrom %s on %s" operation args)
   (cond ((eq operation 'insert-directory) (insert (concat "-rw-rw-r--    1 lpmsmith lpmsmith     3349 May 29 13:35 " (file-name-nondirectory (car args) )"\n" )))
-		 (t (vc-starteam-run-real-handler operation args))))
+		(t (vc-starteam-run-real-handler operation args))))
 
 
 (defun vc-starteam-run-real-handler (operation args)
@@ -597,11 +600,11 @@ OPERATION."
         (inhibit-file-name-operation operation))
     (apply operation args)))
 
-;****************************************
-;                                        
-;  vc-starteam-register
-;                                        
-;****************************************
+										;****************************************
+										;                                        
+										;  vc-starteam-register
+										;                                        
+										;****************************************
 (defun vc-starteam-register (ufile &optional rev comment)
   "Add the file in the current buffer"
   (interactive)
@@ -619,10 +622,10 @@ OPERATION."
 	  
 	  (setq output-buffer 
 			(vc-starteam-execute nil command 
-								   "ADD FILE" path file
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+								 "ADD FILE" path file
+								 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
 	  (vc-starteam-setprop (concat dir file) 'vc-state 'up-to-date)
-)))
+	  )))
 
 (defun vc-starteam-revert (ufile &optional contents-done)
   " Revert FILE back to the current workfile version.  If optional
@@ -633,26 +636,26 @@ OPERATION."
 
   (unless contents-done
 	(let* ((command "co")
-		 (fullpath (expand-file-name ufile))
-		 (dir (file-name-directory fullpath))
-		 (file (file-name-nondirectory fullpath))
-		 (output-buffer)
-		 (must-make-file-read-only vc-starteam-keep-unlocked-files-read-only)
-		 (unlock-operation (if must-make-file-read-only "-u" "-l"))
-		 (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
-		 (forced "-o")
-		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+		   (fullpath (expand-file-name ufile))
+		   (dir (file-name-directory fullpath))
+		   (file (file-name-nondirectory fullpath))
+		   (output-buffer)
+		   (must-make-file-read-only vc-starteam-keep-unlocked-files-read-only)
+		   (unlock-operation (if must-make-file-read-only "-u" "-l"))
+		   (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
+		   (forced "-o")
+		   (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
 
-    (save-excursion 
-      (message "Reverting file %s%s ..." dir file)
+	  (save-excursion 
+		(message "Reverting file %s%s ..." dir file)
 
-	  (setq output-buffer 
-			(vc-starteam-execute nil command 
+		(setq output-buffer 
+			  (vc-starteam-execute nil command 
 								   "REVERT FILE" path file
 								   unlock-operation
 								   read-write-operation
 								   forced
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))))))
+								   (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))))))
 
 
 
@@ -673,10 +676,10 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 
 	  (setq output-buffer 
 			(vc-starteam-execute nil command 
-								   "ADD FILE" path file
-								   "-merge"
-								   "-vn" first-version
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+								 "ADD FILE" path file
+								 "-merge"
+								 "-vn" first-version
+								 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir)))))))
 
 
 
@@ -697,16 +700,16 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 
 	  (setq output-buffer 
 			(vc-starteam-execute nil command 
-								   "ADD FILE" path file
-								   "-merge"
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir))))))
+								 "ADD FILE" path file
+								 "-merge"
+								 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir)))))))
 
 
 (defun vc-starteam-state-heuristic (ufile)
   (if vc-starteam-debug (message "vc-starteam-state-heuristic %s" ufile))
   (let ((state (vc-starteam-getprop ufile 'vc-state)))
 	(if state state 'up-to-date )
-))
+	))
 
 ;****************************************
 ;                                        
@@ -715,6 +718,13 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 ;****************************************
 (defun vc-starteam-state (ufile)
   "Determine the state of the file.  See vc-state for more info"
+  (interactive "fFile:")
+  (if  (local-variable-p 'vc-dir-state-output-buffer)
+	  (vc-starteam-dir-state dir)
+	(vc-starteam-state-single-file ufile)))
+
+(defun vc-starteam-state-single-file (ufile)
+  (interactive "fFile:")
   (let* ((command "hist")
 		 (fullpath (expand-file-name ufile))
 		 (dir (file-name-directory fullpath))
@@ -725,60 +735,73 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 		 (output-buffer))
 
     (message "Checking status of %s ..." fullpath)
-	(if  (local-variable-p 'vc-dir-state-output-buffer)
-		(vc-starteam-dir-state dir)
-	  (save-excursion
-		(setq output-buffer 
-			  (vc-starteam-execute nil command 
-								   (concat "GET FILE STATUS using " command)
-								   path file
-								   "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
-		
-		(set-buffer output-buffer)
-		(goto-char (point-min))      
-		;; Figure out who is locking the file
-		(if (re-search-forward "^Locked by: \\([a-zA-Z].*\\)$" nil t)
-			(progn
-			  (setq locking-user (buffer-substring-no-properties 
-								  (match-beginning 1) (match-end 1)))
-			  (if vc-starteam-debug (message "Locked by=%s" locking-user))))
 
-		;; Get the status
-		(if (re-search-forward "^Status: \\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
-										; return the matched string
-			(let (rtnval)
-			  (setq string-state (buffer-substring-no-properties 
-								  (match-beginning 1) (match-end 1)))
-								   
-			  (setq rtnval 
-					(cond  
-					 ((and locking-user (not (string-equal locking-user 
-										 vc-starteam-locking-user)))
-					  locking-user)
-					 ((and locking-user (string-equal locking-user 
-										 vc-starteam-locking-user))
-					  'edited)
-					 ((string-equal "Merge" string-state) 'needs-merge)
-					 ((string-equal "Out of Date" string-state) 'needs-patch)
-					 ((string-equal "Unknown" string-state) 'missing)
-					 ((string-equal "Current" string-state) 'up-to-date)
-					 ((string-equal "Modified" string-state) 'edited)
-					 ((string-equal "Missing" string-state) 'needs-patch)
-					 ((string-equal "Not in View" string-state) 'missing)))
-			  (vc-starteam-setprop fullpath 'vc-state rtnval)
-			  (if vc-starteam-debug (message "Status=%s" rtnval))
-			  (if (re-search-forward "^Revision: \\([0-9][0-9]*\\)" nil t)
-				  (let ((revision))
-					(setq revision (buffer-substring-no-properties 
+	(save-excursion
+	  (setq output-buffer 
+			(vc-starteam-execute nil command 
+								 (concat "GET FILE STATUS using " command)
+								 path file
+								 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
+		
+	  (set-buffer output-buffer)
+	  (goto-char (point-min))      
+	  ;; See if the file exists
+	  (if (re-search-forward "No files matching" nil t)
+		  		;; The file is missing
+		  (progn
+			(vc-starteam-setprop file 'vc-workfile-version nil)
+			(vc-starteam-setprop fullpath 'vc-state 'missing)
+			'missing)
+		(progn
+		  (goto-char (point-min))      
+
+		  ;; Figure out who is locking the file
+		  (if (re-search-forward "^Locked by: \\([a-zA-Z].*\\)$" nil t)
+			  (progn
+				(setq locking-user (buffer-substring-no-properties 
 									(match-beginning 1) (match-end 1)))
-					(vc-starteam-setprop file 'vc-workfile-version revision)
-					(if vc-starteam-debug (message "Revision=%s" revision))))
-			  rtnval))))))
-;****************************************
-;                                        
-;  vc-starteam-print-log
-;                                        
-;****************************************
+				(if vc-starteam-debug (message "Locked by=%s" locking-user))
+				
+				;; Get the status
+				(if (re-search-forward "^Status: \\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+										; return the matched string
+					(let (rtnval)
+					  (setq string-state (buffer-substring-no-properties 
+										  (match-beginning 1) (match-end 1)))
+					  
+					  (setq rtnval 
+							(cond  
+							 ((and locking-user (not (string-equal locking-user 
+																   vc-starteam-locking-user)))
+							  locking-user)
+							 ((and locking-user (string-equal locking-user 
+															  vc-starteam-locking-user))
+							  'edited)
+							 ((string-equal "Merge" string-state) 'needs-merge)
+							 ((string-equal "Out of Date" string-state) 'needs-patch)
+							 ((string-equal "Unknown" string-state) 'needs-merge) 
+							 ((string-equal "Current" string-state) 'up-to-date)
+							 ((string-equal "Modified" string-state) 'edited)
+							 ((string-equal "Missing" string-state) 'needs-patch)
+							 ((string-equal "Not in View" string-state) 'missing)))
+					  (vc-starteam-setprop fullpath 'vc-state rtnval)
+					  (if vc-starteam-debug (message "Status=%s" rtnval))
+					  (if (re-search-forward "^Revision: \\([0-9][0-9]*\\)" nil t)
+						  (let ((revision))
+							(setq revision (buffer-substring-no-properties 
+											(match-beginning 1) (match-end 1)))
+							(vc-starteam-setprop file 'vc-workfile-version revision)
+							(if vc-starteam-debug (message "Revision=%s" revision))))
+					  rtnval)))))))))
+
+
+		   
+
+										;****************************************
+										;                                        
+										;  vc-starteam-print-log
+										;                                        
+										;****************************************
 (defun vc-starteam-print-log (ufile)
   "Get the revision history log of FILE"
   (interactive "fFile Name:")
@@ -791,7 +814,7 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
     
     (message "Getting history of %s%s ..." dir file)
     (setq output-buffer (vc-starteam-execute "*vc*" command "GET FILE HISTORY" path file 
-					  "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+											 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
     (vc-starteam-display-buffer output-buffer)
     (message "History placed in buffer <%s>" output-buffer)
     ))
@@ -809,10 +832,10 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
     
     (message "Getting %s of %s%s ..." command dir file)
     (setq output-buffer (vc-starteam-execute "*vc-diff*" command "GET FILE DIFF" path file 
-					  (if rev1 "-vn")(if rev1 rev1)						 
-					  (if rev2 "-vn")(if rev2 rev2)						 
-					  "-c" "5"
-					  "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+											 (if rev1 "-vn")(if rev1 rev1)						 
+											 (if rev2 "-vn")(if rev2 rev2)						 
+											 "-c" "5"
+											 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
     ;;(vc-starteam-display-buffer output-buffer)
     (message "%s placed in buffer <%s>" command output-buffer)
 	(save-excursion
@@ -840,17 +863,22 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
 			(if (re-search-forward "[$]Revision:\\s-*\\([0-9]+\\)[$]" nil t)
 				(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
 			  ;; Otherwise get the diff of the file and find the version number
-			  (save-excursion
-				(vc-starteam-diff file)
-				(set-buffer buf)
-				(goto-char(point-min))
-				;; Get the revision number
-				(if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
-					(setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
-				  (error "Error checking status; see buffer %s" buf))))
-			(vc-starteam-setprop file 'vc-workfile-version rev)
-		rev))
-	  nil)))
+			  (if  (eq (vc-starteam-state file) 'missing)
+				  (progn
+					(error "File %s is missing" file))
+				
+				(save-excursion
+				  
+				  (vc-starteam-diff file)
+				  (set-buffer buf)
+				  (goto-char(point-min))
+				  ;; Get the revision number
+				  (if (re-search-forward "Revision:\\s-+\\([0-9]+\\)" nil t)
+					  (setq rev (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+					(error "Error checking status; see buffer %s" buf)))
+				(vc-starteam-setprop file 'vc-workfile-version rev)
+				rev)))))
+	nil))
 		  
 		
 
@@ -870,9 +898,9 @@ The changes are between FIRST-VERSION and SECOND-VERSION."
   "Get the password for the user of StarTeam"
   (interactive)
   (if vc-starteam-password vc-starteam-password
-      (setq vc-starteam-password (read-passwd (concat "Enter password for user "
-					       (vc-starteam-get-user)
-					       ": ")))))
+	(setq vc-starteam-password (read-passwd (concat "Enter password for user "
+													(vc-starteam-get-user)
+													": ")))))
 
 (defun vc-starteam-get-login-info ()
   "Get the login information for the starteam server.
@@ -881,8 +909,8 @@ Returns a string in the form:
 
       USER:PASSWORD@HOST_MACHINE:PORT"
   (concat (vc-starteam-get-user) ":"
-	  (vc-starteam-get-password) "@"
-	  vc-starteam-host ":" vc-starteam-port))
+		  (vc-starteam-get-password) "@"
+		  vc-starteam-host ":" vc-starteam-port))
 
 
 (defun vc-starteam-check-file-status ()
@@ -890,108 +918,108 @@ Returns a string in the form:
 and returns the buffer containing the output of the status check"
   (interactive)
   (let* ((command "list")
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (output-buffer))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (output-buffer))
 
     (message "Checking status of %s%s ..." dir file)
 
     (save-excursion
       (setq output-buffer 
-	    (vc-starteam-execute nil command 
-			      "GET FILE STATUS" path file
-			      "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
-      )
-    output-buffer 
-    ))
+			(vc-starteam-execute nil command 
+								 "GET FILE STATUS" path file
+								 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
+	  )
+	output-buffer 
+	))
 
 (defun vc-starteam-get-file-status-as-string ()
   "Calls vc-starteam-check-file-status, then searches the status buffer 
-and returns the file status as one of the following strings:
+ and returns the file status as one of the following strings:
 
-    Out of Date
-    Unknown
-    Current
-    Modified
-    Missing
-    Merge
-    Not in View"
+	 Out of Date
+	 Unknown
+	 Current
+	 Modified
+	 Missing
+	 Merge
+	 Not in View"
   (interactive)
   (let* ((status-string)
-	(status-buffer (vc-starteam-check-file-status)))
+		 (status-buffer (vc-starteam-check-file-status)))
 
-    (save-excursion
-      (set-buffer status-buffer)
-      (goto-char (point-min))      
-      (if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
-	  ; return the matched string
-	  (buffer-substring-no-properties (match-beginning 1) (match-end 1))
-	(error "Error checking status; see buffer %s" status-buffer))
-      )
-    ))
+	(save-excursion
+	  (set-buffer status-buffer)
+	  (goto-char (point-min))      
+	  (if (re-search-forward "^\\(Out of Date\\|Unknown\\|Current\\|\\Modified\\|\\Missing\\|Merge\\|Not in View\\)" nil t)
+										; return the matched string
+		  (buffer-substring-no-properties (match-beginning 1) (match-end 1))
+		(error "Error checking status; see buffer %s" status-buffer))
+	  )
+	))
 
 (defun vc-starteam-checkout-file (&optional force)
   "Checkout the file in the current buffer
 
-force - if non-nil, forces the checkout"
+ force - if non-nil, forces the checkout"
   (interactive)
   (let* ((command "co")
-	 (buf (vc-starteam-actual-buffer-current-activity))
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (file (cadr dir-and-file))	 
-	 ;; if this file is missing from the working directory and
-	 ;; vc-starteam-keep-unlocked-files-read-only is non-nil, then
-	 ;; we'll explicity tell the starteam command to set the newly
-	 ;; checked-out file to be read-only (because by default the
-	 ;; starteam command-line client sets newly checked-out files
-	 ;; to read-write). We also have to unlock the file since
-	 ;; starteam doesn't allow setting read-only outside of the
-	 ;; context of a lock or unlock operation. Jeesh!
-	 (must-make-file-read-only (if (and vc-starteam-keep-unlocked-files-read-only 
-					    (vc-starteam-is-file-locked-by-user))
-				       t
-				     nil))
-	 (unlock-operation (if must-make-file-read-only "-u" nil))
-	 (read-write-operation (if must-make-file-read-only "-ro" nil))
-	 (output-buffer)
-	 )
-    
-    (save-excursion 
-      (set-buffer buf)
-      (save-buffer))
-    
-    (message "Checking out file %s%s ..." dir file)
+		 (buf (vc-starteam-actual-buffer-current-activity))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (file (cadr dir-and-file))	 
+		 ;; if this file is missing from the working directory and
+		 ;; vc-starteam-keep-unlocked-files-read-only is non-nil, then
+		 ;; we'll explicity tell the starteam command to set the newly
+		 ;; checked-out file to be read-only (because by default the
+		 ;; starteam command-line client sets newly checked-out files
+		 ;; to read-write). We also have to unlock the file since
+		 ;; starteam doesn't allow setting read-only outside of the
+		 ;; context of a lock or unlock operation. Jeesh!
+		 (must-make-file-read-only (if (and vc-starteam-keep-unlocked-files-read-only 
+											(vc-starteam-is-file-locked-by-user))
+									   t
+									 nil))
+		 (unlock-operation (if must-make-file-read-only "-u" nil))
+		 (read-write-operation (if must-make-file-read-only "-ro" nil))
+		 (output-buffer)
+		 )
 
-    (save-excursion
-      (setq output-buffer (vc-starteam-execute nil command "CHECK OUT FILE" path file 
-					    read-write-operation unlock-operation 
-					    "-rp"
-					    (vc-starteam-get-working-dir-from-local-path dir)
-					    (if force "-o" nil) ; force checkout
-					    ))
+	(save-excursion 
+	  (set-buffer buf)
+	  (save-buffer))
+
+	(message "Checking out file %s%s ..." dir file)
+
+	(save-excursion
+	  (setq output-buffer (vc-starteam-execute nil command "CHECK OUT FILE" path file 
+											   read-write-operation unlock-operation 
+											   (vc-starteam-view-working-dir
+												(vc-starteam-get-working-dir-from-local-path dir))
+											   (if force "-o" nil) ; force checkout
+											   ))
       (if (not (vc-starteam-output-buffer-contains output-buffer (format "^%s: checked out" file)))
 
-	  ;; local file is different from starteam file; confirm the checkout
-	  (let ((file-status (vc-starteam-get-file-status-as-string)))
-	    (if (yes-or-no-p (format "Status of %s%s is: %s. Force checkout of file?" 
-				     dir file file-status))
-		;; do a forced checkout
-		(vc-starteam-checkout-file t) 
+		  ;; local file is different from starteam file; confirm the checkout
+		  (let ((file-status (vc-starteam-get-file-status-as-string)))
+			(if (yes-or-no-p (format "Status of %s%s is: %s. Force checkout of file?" 
+									 dir file file-status))
+				;; do a forced checkout
+				(vc-starteam-checkout-file t) 
 
-	      ;; remind user that the checkout was aborted
-	      (error "ABORTED checkout of %s%s because its status is: %s" dir file file-status) 
-	      ))
+			  ;; remind user that the checkout was aborted
+			  (error "ABORTED checkout of %s%s because its status is: %s" dir file file-status) 
+			  ))
 	
-	;; checkout was successful
-	(set-buffer buf)
-	(message "Reverting buffer %s ..." (current-buffer))
-	(revert-buffer t t)
-	(message "Checked out file %s%s ..." dir file)
-	))
+		;; checkout was successful
+		(set-buffer buf)
+		(message "Reverting buffer %s ..." (current-buffer))
+		(revert-buffer t t)
+		(message "Checked out file %s%s ..." dir file)
+		))
     ))
 
 
@@ -1002,9 +1030,9 @@ force - if non-nil, forces the checkout"
   (let* ((command "co")               
          (buf (current-buffer)) 
          (dir (expand-file-name udir)) 
-	 (tempdir nil)
+		 (tempdir nil)
          (path (vc-starteam-get-vc-starteam-path-from-local-path 
-		dir)) 
+				dir)) 
          (output-buffer) 
          ) 
          
@@ -1012,12 +1040,12 @@ force - if non-nil, forces the checkout"
         
     (save-excursion 
       (setq output-buffer (vc-starteam-execute nil command 
-					    "CHECK OUT FILE" path  
-                                            "-is" 
-                                            "-rp" 
-                                            (vc-starteam-get-working-dir-from-local-path 
-					     dir) 
-                                            )) 
+											   "CHECK OUT FILE" path  
+											   "-is" 
+											   (vc-starteam-view-working-dir 
+												(vc-starteam-get-working-dir-from-local-path 
+												 dir)) 
+											   )) 
        
       (message "Checked out dir %s ..." dir) 
       (switch-to-buffer-other-window output-buffer t)
@@ -1027,54 +1055,54 @@ force - if non-nil, forces the checkout"
       ;; Go through each line and determine what the file staus is
       ;;
       (while (not (eobp))
-	(progn
-	  (let* (( next-line-add-newlines nil)
-		 ( line-start (progn (forward-line 0) (point)))
-		 ( line-end   (progn (end-of-line) (point)))
-		 ( line-text  (buffer-substring line-start line-end))
-		 )
-	    (if (string-match "^Folder:\\s-*.*dir:\\s-\\(.*\\))$" line-text)
 		(progn
-		  (setq tempdir (substring  line-text (match-beginning 1) (match-end 1)))
-		  (message "dir:%s" tempdir)
-		  (delete-region line-start line-end))
-	      (if (string-match "\\(.*\\):\\s-file status is Merge,.*" line-text)
-		  (progn
-		    (setq file-name (substring  line-text 
-						    (match-beginning 1) 
-						    (match-end 1)))
-		    (delete-region line-start line-end)
-		    (insert  "Merge       " )
-		    (insert-directory (concat tempdir "/" file-name) "-l"))
-		(if (string-match "\\(.*\\):\\s-checked out.*" line-text)
-		    (progn
-		      (setq file-name (substring  line-text 
-						  (match-beginning 1) 
-						  (match-end 1)))
-		      (delete-region line-start line-end)
-		      (insert  "Up to Date " )
-		      (insert-directory (concat tempdir "/" file-name) "-l"))
-		  (if (string-match "\\(.*\\):\\s-file status is Modified.*" line-text)
-		      (progn
-			(setq file-name (substring  line-text 
-						    (match-beginning 1) 
-						    (match-end 1)))
-			(delete-region line-start line-end)
-			(insert  "Modified   " )
-			(insert-directory (concat tempdir "/" file-name) "-l"))
+		  (let* (( next-line-add-newlines nil)
+				 ( line-start (progn (forward-line 0) (point)))
+				 ( line-end   (progn (end-of-line) (point)))
+				 ( line-text  (buffer-substring line-start line-end))
+				 )
+			(if (string-match "^Folder:\\s-*.*dir:\\s-\\(.*\\))$" line-text)
+				(progn
+				  (setq tempdir (substring  line-text (match-beginning 1) (match-end 1)))
+				  (message "dir:%s" tempdir)
+				  (delete-region line-start line-end))
+			  (if (string-match "\\(.*\\):\\s-file status is Merge,.*" line-text)
+				  (progn
+					(setq file-name (substring  line-text 
+												(match-beginning 1) 
+												(match-end 1)))
+					(delete-region line-start line-end)
+					(insert  "Merge       " )
+					(insert-directory (concat tempdir "/" file-name) "-l"))
+				(if (string-match "\\(.*\\):\\s-checked out.*" line-text)
+					(progn
+					  (setq file-name (substring  line-text 
+												  (match-beginning 1) 
+												  (match-end 1)))
+					  (delete-region line-start line-end)
+					  (insert  "Up to Date " )
+					  (insert-directory (concat tempdir "/" file-name) "-l"))
+				  (if (string-match "\\(.*\\):\\s-file status is Modified.*" line-text)
+					  (progn
+						(setq file-name (substring  line-text 
+													(match-beginning 1) 
+													(match-end 1)))
+						(delete-region line-start line-end)
+						(insert  "Modified   " )
+						(insert-directory (concat tempdir "/" file-name) "-l"))
 
 			
-	      (progn
-		(delete-blank-lines)
-		(message "NOT:%s" line-text))))))
+					(progn
+					  (delete-blank-lines)
+					  (message "NOT:%s" line-text))))))
 	  
-	  (forward-line 1))))
+			(forward-line 1))))
       (goto-char (point-min))
       (delete-blank-lines)
       (while (not (eobp))
-	(progn
-	  (forward-line 1)
-	  (delete-blank-lines)))
+		(progn
+		  (forward-line 1)
+		  (delete-blank-lines)))
 	  
       (vc-starteam-dired-mode))))
 
@@ -1083,41 +1111,41 @@ force - if non-nil, forces the checkout"
   "Checkout the FILE"
   (interactive)
   (let* ((command "co")
-	 ;;(buf (vc-starteam-actual-buffer-current-activity))
-	 ;;(dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 ;;(buf (vc-starteam-actual-buffer-current-activity))
+		 ;;(dir-and-file (vc-starteam-current-buffer-dir-and-file))
 		 (fullpath (expand-file-name ufile))
 		 (temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
 		 (dir (file-name-directory fullpath))
 		 (file (file-name-nondirectory fullpath))
 		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
 
-	 ;; if this file is missing from the working directory and
-	 ;; vc-starteam-keep-unlocked-files-read-only is non-nil, then
-	 ;; we'll explicity tell the starteam command to set the newly
-	 ;; checked-out file to be read-only (because by default the
-	 ;; starteam command-line client sets newly checked-out files
-	 ;; to read-write). We also have to unlock the file since
-	 ;; starteam doesn't allow setting read-only outside of the
-	 ;; context of a lock or unlock operation. Jeesh!
-	 (must-make-file-read-only (not editable))
-	 (unlock-operation (if must-make-file-read-only "-u" "-l"))
-	 (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
-	 (forced (if must-make-file-read-only nil "-o"))
-	 (output-buffer)
-	 (tdir)
-	 )
+		 ;; if this file is missing from the working directory and
+		 ;; vc-starteam-keep-unlocked-files-read-only is non-nil, then
+		 ;; we'll explicity tell the starteam command to set the newly
+		 ;; checked-out file to be read-only (because by default the
+		 ;; starteam command-line client sets newly checked-out files
+		 ;; to read-write). We also have to unlock the file since
+		 ;; starteam doesn't allow setting read-only outside of the
+		 ;; context of a lock or unlock operation. Jeesh!
+		 (must-make-file-read-only (not editable))
+		 (unlock-operation (if must-make-file-read-only "-u" "-l"))
+		 (read-write-operation (if must-make-file-read-only "-ro" "-rw"))
+		 (forced (if must-make-file-read-only nil "-o"))
+		 (output-buffer)
+		 (tdir)
+		 )
     
     (message "Checking out file %s%s rev [%s] into %s ..." path file rev temp-directory)
 
     (save-excursion
       (setq output-buffer (vc-starteam-execute nil command "CHECK OUT FILE" path file 
-					    read-write-operation unlock-operation forced
-					    "-rp" (if destfile temp-directory 
-								(vc-starteam-get-working-dir-from-local-path dir))
-						(if (and rev (string< "" rev))  "-vn")
-						(if (and rev (string< "" rev)) rev)
-					    ;;(if force "-o" nil) ; force checkout
-					    ))
+											   read-write-operation unlock-operation forced
+											   (vc-starteam-view-working-dir (if destfile temp-directory 
+																			   (vc-starteam-get-working-dir-from-local-path dir)))
+											   (if (and rev (string< "" rev))  "-vn")
+											   (if (and rev (string< "" rev)) rev)
+											   ;;(if force "-o" nil) ; force checkout
+											   ))
 	  (set-buffer output-buffer)
 	  (goto-char (point-min))
 	  (if (re-search-forward "working dir:\\s-+\\([^)]+\\))" nil t)
@@ -1143,7 +1171,7 @@ force - if non-nil, forces the checkout"
 ;; 	;;     dir file temp-directory dir file)
 ;;     (save-excursion
 ;;       (setq output-buffer (vc-starteam-execute nil command "TEMPORARY CHECK OUT OF FILE" path file 
-;; 				    "-rp" temp-directory))
+;; 				    (vc-starteam-view-working-dir temp-directory)))
 ;;       (goto-char (point-min))
 ;;       (if (re-search-forward "(working dir: \\(.*\\))" nil t)
 ;; 	  (concat (buffer-substring-no-properties (match-beginning 1)
@@ -1158,12 +1186,12 @@ force - if non-nil, forces the checkout"
   "Checkout the file in the current buffer into a temp dir.  Return the path name of the temp file"
   (interactive)
   (let* ((command "co")
-	(temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
-	(dir (file-name-directory (buffer-file-name)))
-	(no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
-	(no-map-dir (file-name-directory (buffer-file-name)))
-	(file (buffer-name))
-	(path (vc-starteam-get-vc-starteam-path-from-local-path no-map-dir)))
+		 (temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
+		 (dir (file-name-directory (buffer-file-name)))
+		 (no-map-temp-directory (concat temporary-file-directory "/StarTeamTemp-" user-full-name))
+		 (no-map-dir (file-name-directory (buffer-file-name)))
+		 (file (buffer-name))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path no-map-dir)))
 
     (let* ((dir (if starteam-map-cygdrive 
                     (starteam-remap-cygdrive no-map-dir)
@@ -1173,20 +1201,20 @@ force - if non-nil, forces the checkout"
                              (no-map-temp-directory))))
 
 
-    (save-buffer)
-    (message "Checking out temporary version of file %s%s to %s/%s%s" 
-	     dir file temp-directory dir file)
-    (save-excursion
-      (set-buffer (vc-starteam-execute nil command "TEMPORARY CHECK OUT OF FILE" path file 
-				    "-rp" temp-directory))
-      (goto-char (point-min))
-      (if (re-search-forward "(working dir: \\(.*\\))" nil t)
-	  (concat (buffer-substring-no-properties (match-beginning 1)
-						  (match-end 1))
-		  "/" file)
-	nil)
-      )
-    )))
+	  (save-buffer)
+	  (message "Checking out temporary version of file %s%s to %s/%s%s" 
+			   dir file temp-directory dir file)
+	  (save-excursion
+		(set-buffer (vc-starteam-execute nil command "TEMPORARY CHECK OUT OF FILE" path file 
+										 (vc-starteam-view-working-dir temp-directory)))
+		(goto-char (point-min))
+		(if (re-search-forward "(working dir: \\(.*\\))" nil t)
+			(concat (buffer-substring-no-properties (match-beginning 1)
+													(match-end 1))
+					"/" file)
+		  nil)
+		)
+	  )))
 
 ;; maybe should have vc-starteam-check-file-status return vector of all
 ;; status elements? Then this method could simply check to see if the
@@ -1195,7 +1223,7 @@ force - if non-nil, forces the checkout"
   (interactive)
   
   (string-equal (vc-starteam-check-file-status)  "Missing")
-)
+  )
 
 ;;
 ;; Used by VC to checkin the file
@@ -1215,13 +1243,13 @@ force - if non-nil, forces the checkout"
 		 (file nil))
     
     ;;(save-buffer)
-    ;(message "Checking in file %s%s ..." dir file)
+										;(message "Checking in file %s%s ..." dir file)
     
-    ;****************************************
-    ;                                        
-    ;  Iterate over all the files, checking in each one
-    ;                                        
-    ;****************************************
+										;****************************************
+										;                                        
+										;  Iterate over all the files, checking in each one
+										;                                        
+										;****************************************
     (mapcar 
 	 (lambda (fullpath)
 	   (setq path (vc-starteam-get-vc-starteam-path-from-local-path (file-name-directory fullpath)))
@@ -1234,8 +1262,8 @@ force - if non-nil, forces the checkout"
 				 (setq output-buffer 
 					   (vc-starteam-execute nil command command path file 
 											"-r" (concat "\"" reason "\"")
-											"-rp" 
-											(vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath))
+											(vc-starteam-view-working-dir 
+											 (vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath)))
 											(if force "-o" nil)
 											unlock-operation 
 											read-write-operation-for-checkin))
@@ -1253,14 +1281,14 @@ force - if non-nil, forces the checkout"
 				   (vc-starteam-setprop (concat (file-name-directory fullpath) file) 'vc-workfile-version nil)
 				   )
 				 
-				 ) ; end save-excursion		      		     
+				 )			; end save-excursion		      		     
 			   )))
 	   file) 
 	 files)
     (mapcar (lambda (x)
-	      (message "%s" x)
-	      (funcall x files reason))
-	    vc-starteam-post-checkin-functions)
+			  (message "%s" x)
+			  (funcall x files reason))
+			vc-starteam-post-checkin-functions)
     (revert-buffer nil t)	  
     (delete-window)
     ))
@@ -1270,92 +1298,92 @@ force - if non-nil, forces the checkout"
   "Do the actual checking in or adding of files once they have had their log entry set."
   (interactive)
   (let* ((reason (buffer-string))
-	 (force (if (boundp 'vc-starteam-force-checkin) vc-starteam-force-checkin nil))
-	 (buf vc-starteam-last-buffer)
-	 (files vc-starteam-checkin-files)
-	 (command vc-starteam-command)
-	 (unlock-operation (if vc-starteam-unlock-after-checkin "-u" nil)) 
-	 (read-write-operation-for-checkin (if (and vc-starteam-unlock-after-checkin vc-starteam-keep-unlocked-files-read-only)
-					       "-ro" 
-					     nil)) 
-	 (read-write-operation-for-add (if vc-starteam-keep-unlocked-files-read-only "-ro" nil)) 
-	 (path nil)
-	 (file nil))
+		 (force (if (boundp 'vc-starteam-force-checkin) vc-starteam-force-checkin nil))
+		 (buf vc-starteam-last-buffer)
+		 (files vc-starteam-checkin-files)
+		 (command vc-starteam-command)
+		 (unlock-operation (if vc-starteam-unlock-after-checkin "-u" nil)) 
+		 (read-write-operation-for-checkin (if (and vc-starteam-unlock-after-checkin vc-starteam-keep-unlocked-files-read-only)
+											   "-ro" 
+											 nil)) 
+		 (read-write-operation-for-add (if vc-starteam-keep-unlocked-files-read-only "-ro" nil)) 
+		 (path nil)
+		 (file nil))
     
     ;;(save-buffer)
-    ;(message "Checking in file %s%s ..." dir file)
+										;(message "Checking in file %s%s ..." dir file)
     
-    ;****************************************
-    ;                                        
-    ;  Iterate over all the files, checking in each one
-    ;                                        
-    ;****************************************
+										;****************************************
+										;                                        
+										;  Iterate over all the files, checking in each one
+										;                                        
+										;****************************************
     (mapcar (lambda (fullpath)
-	      (setq path (vc-starteam-get-vc-starteam-path-from-local-path (file-name-directory fullpath)))
-	      (setq file (file-name-nondirectory fullpath))
-	      (let ((operation-success-magic-text (cond ((string-equal command "ci") "checked in")
-							((string-equal command "add") "added")
-							(t (error "ERROR: unknown command \"%s\" sent to vc-starteam-finish-logentry" command))
-							))
-		    (output-buffer))
-		(if path
-		    (progn
-		      (save-excursion
-			(cond (
-			       ;; CHECKING IN an existing file
-			       (string-equal command "ci")			     
-			       (setq output-buffer 
-				     (vc-starteam-execute nil command command path file 
-						       "-r" reason
-						       "-rp" 
-						       (vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath))
-						       (if force "-o" nil)
-						       unlock-operation 
-						       read-write-operation-for-checkin
-						       ))				 
-			       )
+			  (setq path (vc-starteam-get-vc-starteam-path-from-local-path (file-name-directory fullpath)))
+			  (setq file (file-name-nondirectory fullpath))
+			  (let ((operation-success-magic-text (cond ((string-equal command "ci") "checked in")
+														((string-equal command "add") "added")
+														(t (error "ERROR: unknown command \"%s\" sent to vc-starteam-finish-logentry" command))
+														))
+					(output-buffer))
+				(if path
+					(progn
+					  (save-excursion
+						(cond (
+							   ;; CHECKING IN an existing file
+							   (string-equal command "ci")			     
+							   (setq output-buffer 
+									 (vc-starteam-execute nil command command path file 
+														  "-r" reason
+														  (vc-starteam-view-working-dir 
+														   (vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath)))
+														  (if force "-o" nil)
+														  unlock-operation 
+														  read-write-operation-for-checkin
+														  ))				 
+							   )
 
-			      ;; ADDING a new file
-			      ((string-equal command "add")
-			       (message "Adding file %s%s to Starteam path %s" (file-name-directory fullpath) file path)			     
-			       (setq output-buffer (vc-starteam-execute nil command command path file 
-								     "-rp" (vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath)) 
-								     "-u" read-write-operation-for-add "-d" reason))			       
-			       )
+							  ;; ADDING a new file
+							  ((string-equal command "add")
+							   (message "Adding file %s%s to Starteam path %s" (file-name-directory fullpath) file path)			     
+							   (setq output-buffer (vc-starteam-execute nil command command path file 
+																		(vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path (file-name-directory fullpath))) 
+																		"-u" read-write-operation-for-add "-d" reason))			       
+							   )
 
-			      ;; UNKNOWN command
-			      ;; (already trapped this error in definition of operation-success-magic-text
+							  ;; UNKNOWN command
+							  ;; (already trapped this error in definition of operation-success-magic-text
 
-			      ) ; end 'cond
+							  )			; end 'cond
 			
-			;; check operation output buffer for errors
-			(message "Checking <%s> for \"%s\"" output-buffer (format "^%s: %s" file operation-success-magic-text))
-			(if (not (vc-starteam-output-buffer-contains output-buffer (format "^%s: %s" file operation-success-magic-text)))			    
-			    ;; operation failed. Abort with explanation.
-			    (error "ABORTED. %s%s was NOT %s. See buffer <%s> for more details." 
-				   (file-name-directory fullpath) file operation-success-magic-text output-buffer)
-			  ;; operation was successful
-			  (message "%s%s successfully %s" (file-name-directory fullpath) file operation-success-magic-text)
-			  )
+						;; check operation output buffer for errors
+						(message "Checking <%s> for \"%s\"" output-buffer (format "^%s: %s" file operation-success-magic-text))
+						(if (not (vc-starteam-output-buffer-contains output-buffer (format "^%s: %s" file operation-success-magic-text)))			    
+							;; operation failed. Abort with explanation.
+							(error "ABORTED. %s%s was NOT %s. See buffer <%s> for more details." 
+								   (file-name-directory fullpath) file operation-success-magic-text output-buffer)
+						  ;; operation was successful
+						  (message "%s%s successfully %s" (file-name-directory fullpath) file operation-success-magic-text)
+						  )
 
-			) ; end save-excursion		      		     
-		      )))
-	      file) 
-	    files)
+						)  ; end save-excursion		      		     
+					  )))
+			  file) 
+			files)
     (mapcar (lambda (x)
-	      (message "%s" x)
-	      (funcall x files reason))
-	    vc-starteam-post-checkin-functions)
+			  (message "%s" x)
+			  (funcall x files reason))
+			vc-starteam-post-checkin-functions)
     (switch-to-buffer buf)
     (revert-buffer nil t)	  
     (delete-window)
     ))
 
-;****************************************
-;                                        
-;  Check in multiple files
-;                                        
-;****************************************
+										;****************************************
+										;                                        
+										;  Check in multiple files
+										;                                        
+										;****************************************
 (defun vc-starteam-checkin-multiple-files (files &optional force)
   "Checkin all the files in 'files' with a single reason.
 
@@ -1363,9 +1391,9 @@ files - a list of fully qualified files to check in
 force - if non-nil, forces the checkins"
   (interactive "fFile to check in: ")
   (let* ((f (if (listp files) files (list files)))
-	 (path nil)
-	 (command "ci")
-	 (listbuf (get-buffer-create "*Check-in-List*")))
+		 (path nil)
+		 (command "ci")
+		 (listbuf (get-buffer-create "*Check-in-List*")))
     (set-buffer listbuf)
     (erase-buffer)
     (insert-string "The following files are selected to check in:\n")
@@ -1382,11 +1410,11 @@ force:
    if non-nil, forces the checkin "
   (interactive)
   (let* ((command "ci")
-	 (buf (vc-starteam-actual-buffer-current-activity))
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (files (list (concat dir file))))
+		 (buf (vc-starteam-actual-buffer-current-activity))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (files (list (concat dir file))))
 
     (save-excursion 
       ;; save the buffer containing the file being checked in
@@ -1404,11 +1432,11 @@ force:
   (interactive)
 
   (let* ((command "add")
-	 (buf (vc-starteam-actual-buffer-current-activity))
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (files (list (concat dir file))))
+		 (buf (vc-starteam-actual-buffer-current-activity))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (files (list (concat dir file))))
 
     ;; save the buffer containing the file being added
     (save-excursion 
@@ -1427,15 +1455,15 @@ force:
   "Get the status of the file in the current buffer"
   (interactive)
   (let* ((command "hist")
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (output-buffer))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (output-buffer))
     
     (message "Getting history of %s%s ..." dir file)
     (setq output-buffer (vc-starteam-execute nil command "GET FILE HISTORY" path file 
-					  "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+											 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
     (vc-starteam-display-buffer output-buffer)
     (message "History placed in buffer <%s>" output-buffer)
     ))
@@ -1444,18 +1472,18 @@ force:
   "Update the status of the file in the current buffer"
   (interactive)
   (let* ((command "update-status")
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (output-buffer))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (output-buffer))
     (message "Updating status of %s%s ..." dir file)
     (setq output-buffer (vc-starteam-execute nil
-			 command "UPDATE FILE STATUS" path file 
-			 "-v" "-contents" 
-			 "-rp" (vc-starteam-get-working-dir-from-local-path dir)))
+											 command "UPDATE FILE STATUS" path file 
+											 "-v" "-contents" 
+											 (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir))))
     (message "Status of %s%s is now: %s" 
-	     dir file (vc-starteam-get-file-status-as-string))
+			 dir file (vc-starteam-get-file-status-as-string))
     ))
 
 (defun vc-starteam-lock-file ()
@@ -1476,50 +1504,50 @@ force:
 unlock:
    if non-nil, will unlock the file instead of locking it"
   (let* ((command "lck")
-	 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
-	 (dir (car dir-and-file))
-	 (file (cadr dir-and-file))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (lock-operation (if unlock "-u" "-l"))
-	 (read-write-operation (if vc-starteam-keep-unlocked-files-read-only 
-				   ;; set read-only status as appropriate
-				   (if unlock "-ro" "-rw")
-				 ;; else don't modify read-only status
-				 nil)) 
-	 (output-buffer)
-	 (operation-success-magic-text (if unlock "unlocked" "locked")))
+		 (dir-and-file (vc-starteam-current-buffer-dir-and-file))
+		 (dir (car dir-and-file))
+		 (file (cadr dir-and-file))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (lock-operation (if unlock "-u" "-l"))
+		 (read-write-operation (if vc-starteam-keep-unlocked-files-read-only 
+								   ;; set read-only status as appropriate
+								   (if unlock "-ro" "-rw")
+								 ;; else don't modify read-only status
+								 nil)) 
+		 (output-buffer)
+		 (operation-success-magic-text (if unlock "unlocked" "locked")))
 
     (message "%s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
     (setq output-buffer (vc-starteam-execute nil command "LOCK FILE" path file lock-operation read-write-operation))
-    ;(message "FINISHED %s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
+										;(message "FINISHED %s file %s%s ..." (if unlock "Unlocking" "Locking") dir file)
 
     ;; check operation output buffer for errors
     (message "Checking <%s> for \"%s\"" output-buffer (format "^%s: %s" file operation-success-magic-text))
 
     (if (not (vc-starteam-output-buffer-contains output-buffer 
-					      (format "^%s: %s" file operation-success-magic-text)))
+												 (format "^%s: %s" file operation-success-magic-text)))
 
-	;; operation failed. Abort with explanation.
-	(let ((reason (cond
-		       ;; someone else has it locked
-		       ((vc-starteam-output-buffer-contains output-buffer "already locked by another user")
-			"It is exclusively locked by someone else")
-		       ;; file not in repository
-		       ((vc-starteam-output-buffer-contains output-buffer (format "No files matching \"%s\"" file))
-			"File is not in the Starteam repository")
-		       ;; not sure why it failed
-		       (t 
-			(format "See buffer <%s> for more details." output-buffer)))
-		      ))
-	  (error "ABORTED. %s was NOT %s. %s."  file operation-success-magic-text reason)
-	  )
+		;; operation failed. Abort with explanation.
+		(let ((reason (cond
+					   ;; someone else has it locked
+					   ((vc-starteam-output-buffer-contains output-buffer "already locked by another user")
+						"It is exclusively locked by someone else")
+					   ;; file not in repository
+					   ((vc-starteam-output-buffer-contains output-buffer (format "No files matching \"%s\"" file))
+						"File is not in the Starteam repository")
+					   ;; not sure why it failed
+					   (t 
+						(format "See buffer <%s> for more details." output-buffer)))
+					  ))
+		  (error "ABORTED. %s was NOT %s. %s."  file operation-success-magic-text reason)
+		  )
 
 	  ;; operation was successful
 	  (message "%s successfully %s" file operation-success-magic-text)
       )
     
-    (revert-buffer t t) ; to refresh read-only status
+    (revert-buffer t t)					; to refresh read-only status
     (message "%s is now: %s" file operation-success-magic-text)
     ))
 
@@ -1532,14 +1560,14 @@ unlock:
   "Get the status of the directory in the current buffer"
   (interactive "DDirectory name:")
   (let* ((command "list")
-	 (path nil)
-	 (dir (expand-file-name indir))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
-	 (still-looking t))
+		 (path nil)
+		 (dir (expand-file-name indir))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir))
+		 (still-looking t))
     (message "Checking directory %s ..." dir )
     (switch-to-buffer  
      (vc-starteam-execute nil command "LIST DIRECTORY" path  "*"
-		       "-rp" (vc-starteam-get-working-dir-from-local-path dir) ) t)
+						  (vc-starteam-view-working-dir (vc-starteam-get-working-dir-from-local-path dir)) ) t)
     (cd dir)
     (vc-starteam-dired-mode)
     ))
@@ -1551,8 +1579,8 @@ unlock:
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward "^Folder:.*\nFolder:" nil t)
-	(goto-char (match-beginning 0))
-	(kill-line))))
+		(goto-char (match-beginning 0))
+		(kill-line))))
   )
 
 (defun vc-starteam-get-directory-of-files-to-checkout (dir)
@@ -1568,43 +1596,43 @@ unlock:
   (interactive "DDirectory name:
 sFilter [MCONIGU]*")
   (let* ((command "list")
-	 (dir (expand-file-name rawdir))
-	 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
-     (message "Checking directory %s (with filter)..." dir )
+		 (dir (expand-file-name rawdir))
+		 (path (vc-starteam-get-vc-starteam-path-from-local-path dir)))
+	(message "Checking directory %s (with filter)..." dir )
 
-     (switch-to-buffer (vc-starteam-execute nil command filter path "-is" "-filter" filter  ) t)
+	(switch-to-buffer (vc-starteam-execute nil command filter path "-is" "-filter" filter  ) t)
        
-     ;;****************************************
-     ;;                                        
-     ;;  remove the lines of files not needing checkout
-     ;;                                        
-     ;;****************************************
-     (message "Getting rid of all the Current files ... ")
-     (save-excursion
-       (goto-char(point-min))
-       (delete-matching-lines "^Current"))
+	;;****************************************
+	;;                                        
+	;;  remove the lines of files not needing checkout
+	;;                                        
+	;;****************************************
+	(message "Getting rid of all the Current files ... ")
+	(save-excursion
+	  (goto-char(point-min))
+	  (delete-matching-lines "^Current"))
 
-     (vc-starteam-remove-empty-directory-listings)
-     (cd dir)
-     (vc-starteam-dired-mode)     
-     ))
+	(vc-starteam-remove-empty-directory-listings)
+	(cd dir)
+	(vc-starteam-dired-mode)     
+	))
 
 (defun vc-starteam-ediff ()
   "Get the diff of the file in the current buffer"
   (interactive)
   (let ((buf (cond ((eq major-mode 'vc-starteam-log-mode) vc-starteam-log-file)
-		    ((eq major-mode 'vc-starteam-dired-mode)
-		     (progn (find-file (dired-get-filename)) (current-buffer)))
-		    (t (current-buffer)))))
+				   ((eq major-mode 'vc-starteam-dired-mode)
+					(progn (find-file (dired-get-filename)) (current-buffer)))
+				   (t (current-buffer)))))
     
     (save-excursion
       (if vc-starteam-log-file (set-buffer vc-starteam-log-file) nil)
       (let* ((temp-file (vc-starteam-checkout-temp-file)))
-	(save-buffer)
-	(if temp-file
-	    (ediff buffer-file-name temp-file)
-	  ;;nil
-	  (vc-starteam-error-file-not-in-view buffer-file-name) )))
+		(save-buffer)
+		(if temp-file
+			(ediff buffer-file-name temp-file)
+		  ;;nil
+		  (vc-starteam-error-file-not-in-view buffer-file-name) )))
     ))
 
 (defun vc-starteam-emerge-quit ()
@@ -1621,10 +1649,10 @@ sFilter [MCONIGU]*")
     (save-buffer)
     (add-hook 'quit-hook 'vc-starteam-emerge-quit)
     (if temp-file
-	(emerge-files t buffer-file-name temp-file buffer-file-name nil quit-hook)
-	;;(ediff-files buffer-file-name temp-file)
+		(emerge-files t buffer-file-name temp-file buffer-file-name nil quit-hook)
+	  ;;(ediff-files buffer-file-name temp-file)
       ;;nil
-    (vc-starteam-error-file-not-in-view buffer-file-name)  )))
+	  (vc-starteam-error-file-not-in-view buffer-file-name)  )))
 
 (defun vc-starteam-next-action ()
   "Performs the next appropriate action on the file in the current
@@ -1642,22 +1670,22 @@ Not in View             vc-starteam-add"
   (interactive)
   (let ((status (vc-starteam-get-file-status-as-string)))
     (cond ((equal status "Out of Date")
-	   (vc-starteam-checkout-file))
-	  ((equal status "Missing")
-	   (vc-starteam-checkout-file))
-	  ((equal status "Current")
-	   (message "%s" "Up to date"))
-	  ((equal status "Modified")
-	   (vc-starteam-checkin-file))
-	  ((equal status "Merge")
-	   (vc-starteam-merge))
-	  ((equal status "Unknown")
-	   (vc-starteam-update-status))
-	  ((equal status "Not in View")
-	   (vc-starteam-add))
-	  (t
-	   (error "Cannot perform next operation because status is %s" status))
-	  )))
+		   (vc-starteam-checkout-file))
+		  ((equal status "Missing")
+		   (vc-starteam-checkout-file))
+		  ((equal status "Current")
+		   (message "%s" "Up to date"))
+		  ((equal status "Modified")
+		   (vc-starteam-checkin-file))
+		  ((equal status "Merge")
+		   (vc-starteam-merge))
+		  ((equal status "Unknown")
+		   (vc-starteam-update-status))
+		  ((equal status "Not in View")
+		   (vc-starteam-add))
+		  (t
+		   (error "Cannot perform next operation because status is %s" status))
+		  )))
 
 
 (defun vc-starteam-execute (buffer command operation-string path &optional file &rest args)
@@ -1692,16 +1720,16 @@ args
 "
   (if vc-starteam-debug
       (message "Starteam %s operation: [ %s %s %s ]" 
-	       operation-string
-	       (concat vc-starteam-executable " " command " -x -p \"" 
-		       (vc-starteam-get-login-info) "/" path "\"" )
-	       (vc-starteam-stringlist-to-single-string args) file)
+			   operation-string
+			   (concat vc-starteam-executable " " command " -x -p \"" 
+					   (vc-starteam-get-login-info) "/" path "\"" )
+			   (vc-starteam-stringlist-to-single-string args) file)
     nil)
   (let ((bname (if buffer buffer
-		 (concat 
-		  "*Starteam [" command "] " 
-		  path 
-		  "*"))))
+				 (concat 
+				  "*Starteam [" command "] " 
+				  path 
+				  "*"))))
 
     (save-excursion
       (get-buffer-create bname)
@@ -1710,26 +1738,27 @@ args
       (erase-buffer)
       )
 
-    ;(message "starteam executing [%s %s %s]" (concat vc-starteam-executable " " command " -x -p \"" (vc-starteam-get-login-info) "/" path "\"" ) (vc-starteam-stringlist-to-single-string args) file)
+										;(message "starteam executing [%s %s %s]" (concat vc-starteam-executable " " command " -x -p \"" (vc-starteam-get-login-info) "/" path "\"" ) (vc-starteam-stringlist-to-single-string args) file)
+	(if vc-starteam-debug (message "ARGS=%S" (append (vc-starteam-fix-vc-starteam-args args) (list file))))
     (if args 
-	;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname  nil "/C" "echo" "ECHOING: "
-	(apply 'call-process vc-starteam-executable nil bname  nil
-	       command
-	       "-nologo" ; don't print executable version
-	       "-x"      ; non-interactive
-	       "-p"
-	       (concat (vc-starteam-get-login-info) "/" path)
-	       (append (vc-starteam-remove-bad-vc-starteam-args args) (list file))
-	       )
-      ;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname nil "/C" "echo" "BOO"
+										;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname  nil "/C" "echo" "ECHOING: "
+		(apply 'call-process vc-starteam-executable nil bname  nil
+			   command
+			   "-nologo"			  ; don't print executable version
+			   "-x"						; non-interactive
+			   "-p"
+			   (concat (vc-starteam-get-login-info) "/" path)
+			   (append (vc-starteam-fix-vc-starteam-args args) (list file))
+			   )
+										;(apply 'call-process "C:\\winnt\\system32\\cmd.exe" nil bname nil "/C" "echo" "BOO"
       (apply 'call-process vc-starteam-executable nil bname nil
-	     command
-	     "-nologo"
-	     "-x"
-	     "-p"
-	     (concat (vc-starteam-get-login-info) "/" path)
-	     (if file (list file) nil)
-	     )
+			 command
+			 "-nologo"
+			 "-x"
+			 "-p"
+			 (concat (vc-starteam-get-login-info) "/" path)
+			 (if file (list file) nil)
+			 )
       )
 
     (save-excursion
@@ -1737,7 +1766,7 @@ args
       (goto-char (point-min))
       )
 
-  bname))
+	bname))
 
 (define-derived-mode vc-starteam-dired-mode dired-mode vc-starteam-dired-mode-name
   "The major mode used in VC directory buffers.  It works like Dired,
@@ -1753,8 +1782,8 @@ the file named in the current Dired buffer line.  `vv' invokes
 There is a special command, `*l', to mark all files currently locked."
   ;;(make-local-hook 'dired-after-readin-hook)
   ;;(add-hook 'dired-after-readin-hook 'vc-starteam-dired-hook nil t)
-;;  (make-local-hook 'dired-mode-hook)
- ;; (add-hook 'dired-mode-hook 'vc-starteam-dired-hook nil t)
+  ;;  (make-local-hook 'dired-mode-hook)
+  ;; (add-hook 'dired-mode-hook 'vc-starteam-dired-hook nil t)
   ;; The following is slightly modified from dired.el,
   ;; because file lines look a bit different in vc-dired-mode.
   (set (make-local-variable 'dired-move-to-filename-regexp)
@@ -1767,7 +1796,7 @@ There is a special command, `*l', to mark all files currently locked."
        vc-starteam-dired-switches
        (set (make-local-variable 'dired-actual-switches)
             vc-starteam-dired-switches))
-;;  (set (make-local-variable 'vc-starteam-dired-terse-mode) vc-starteam-dired-terse-display)
+  ;;  (set (make-local-variable 'vc-starteam-dired-terse-mode) vc-starteam-dired-terse-display)
   (setq vc-dired-mode t))
 
 (defun vc-starteam-dir-get-subdirs ()
@@ -1777,15 +1806,15 @@ There is a special command, `*l', to mark all files currently locked."
     (let ((rtnval nil))
       (goto-char (point-min))
       (while (re-search-forward "working dir: \\([^)]*\\)" nil t)
-	(if rtnval
-	    (setq rtnval
-		  (cons
-		   (cons
-		    (concat (buffer-substring-no-properties (match-beginning 1) (match-end 1)) "/")
-		    (match-beginning 1)) rtnval))
-	  (setq rtnval (list (cons
-			(concat (buffer-substring-no-properties (match-beginning 1) (match-end 1)) "/")
-			(match-beginning 1))))))
+		(if rtnval
+			(setq rtnval
+				  (cons
+				   (cons
+					(concat (buffer-substring-no-properties (match-beginning 1) (match-end 1)) "/")
+					(match-beginning 1)) rtnval))
+		  (setq rtnval (list (cons
+							  (concat (buffer-substring-no-properties (match-beginning 1) (match-end 1)) "/")
+							  (match-beginning 1))))))
       rtnval)))
       
 (defun vc-starteam-log-mode (&optional command files buf force)
@@ -1831,42 +1860,51 @@ additional bindings will be in effect.
 
 ;; Takes a list of strings and concatenates them with a space between each element
 (defun vc-starteam-stringlist-to-single-string (args)
+  "Takes a list of strings and concatenates them with a space between
+each element.  The element is a list, recursively apply to the
+element"
   (let ((firstElement (car args))
-	(remainingElements (cdr args)))
-    (concat firstElement 
-	    (if remainingElements 
-		(concat " " (vc-starteam-stringlist-to-single-string remainingElements)) 
-	      nil))))
+		(remainingElements (cdr args)))
+    (concat (if (eq (type-of firstElement) 'cons)
+				(vc-starteam-stringlist-to-single-string firstElement)
+			  firstElement)
+			(if remainingElements 
+				(concat " " (vc-starteam-stringlist-to-single-string remainingElements)) 
+			  nil))))
 
 (defun vc-starteam-error-file-not-in-view (path)
   (error "Could not find %s in any known Starteam view" path)
-)
+  )
 
 ;; this is necessary because starteam gets confused if it gets blank
 ;; arguments sent to it via 'apply.
-(defun vc-starteam-remove-bad-vc-starteam-args (arglist)
+(defun vc-starteam-fix-vc-starteam-args (arglist)
   "Removes the elements in the argument that begin with a space, are
-are nil, or are the empty string. Returns the filtered list."  
+are nil, or are the empty string. If the element is a list, append all
+the elements of the list.  Returns the filtered list."
   (let
       ((non-nil-args ()))
     (while arglist
       (let ((element (car arglist)))
-	;; only include the element if it is not nil, it is not the empty
-	;; string, and its first character is not a space
-	;;
-	;; -- TO DO: should probably make sure the element is a string
-	;;    before doing string ops on it
-	(if (and element 
-		 (not (equal element "")) 
-		 (not (equal (substring element 0 1) " ")) )
-	    (setq non-nil-args (append non-nil-args (list element)))
-	  nil)
+		;; only include the element if it is not nil, it is not the empty
+		;; string, and its first character is not a space
+		;; If it is a list, append the elements of the list
+
+		(if (eq (type-of element) 'cons)
+			(setq non-nil-args (append non-nil-args (vc-starteam-fix-vc-starteam-args element)))
+		  (if (and element 
+				   (eq (type-of element) 'string)
+				   (not (equal element "")) 
+				   (not (equal (substring element 0 1) " ")) )
+			  (setq non-nil-args (append non-nil-args (list element)))
+			nil))
+		)
+	  (setq arglist(cdr arglist))
+	  )
+	(if vc-starteam-debug (message "vc-starteam-fix-vc-starteam-args: %S" non-nil-args))
+	non-nil-args
 	)
-      (setq arglist(cdr arglist))
-      )
-    non-nil-args
-    )
-)
+  )
 
 (defun vc-starteam-actual-buffer-current-activity ()
   "Examines the current buffer and, based on the buffer mode, returns
@@ -1880,27 +1918,27 @@ buffer."
   (interactive)
   (let* ((buf (cond 
 	       
-	       ;; vc-starteam-log-file
-	       ((eq major-mode 'vc-starteam-log-mode) vc-starteam-log-file)
+			   ;; vc-starteam-log-file
+			   ((eq major-mode 'vc-starteam-log-mode) vc-starteam-log-file)
 		    
-	       ;; vc-starteam-dired-mode 
-	       ;;
-	       ;; Note: We have to open the file under the point, get
-	       ;; the buffer, then switch back to the dired
-	       ;; buffer. Otherwise the buffer in view after the
-	       ;; function call would be different than the one in
-	       ;; view before the call.
-	       ((eq major-mode 'vc-starteam-dired-mode) 
-		(let ((buffer-file-under-point))
-		  (save-excursion 
-		    (find-file (dired-get-filename)) 
-		    (setq buffer-file-under-point (current-buffer))
-		    )
-		  (switch-to-buffer (current-buffer))
-		  buffer-file-under-point))
+			   ;; vc-starteam-dired-mode 
+			   ;;
+			   ;; Note: We have to open the file under the point, get
+			   ;; the buffer, then switch back to the dired
+			   ;; buffer. Otherwise the buffer in view after the
+			   ;; function call would be different than the one in
+			   ;; view before the call.
+			   ((eq major-mode 'vc-starteam-dired-mode) 
+				(let ((buffer-file-under-point))
+				  (save-excursion 
+					(find-file (dired-get-filename)) 
+					(setq buffer-file-under-point (current-buffer))
+					)
+				  (switch-to-buffer (current-buffer))
+				  buffer-file-under-point))
 	       
-	       ;; any other mode
-	       (t (current-buffer)))))
+			   ;; any other mode
+			   (t (current-buffer)))))
     buf))
 
 (defun vc-starteam-current-buffer-dir-and-file ()
@@ -1912,12 +1950,12 @@ based on the buffer mode. Values are returned as a list in the form
 Calls 'error if the current buffer is not associated with a file."
   (interactive)
   (let* ((buf (vc-starteam-actual-buffer-current-activity))
-	 (file (file-name-nondirectory (buffer-file-name buf)))
-	 (bfilename (buffer-file-name buf))
-	 (dir))
+		 (file (file-name-nondirectory (buffer-file-name buf)))
+		 (bfilename (buffer-file-name buf))
+		 (dir))
     
     (if bfilename
-	(setq dir (file-name-directory bfilename))
+		(setq dir (file-name-directory bfilename))
       (error "Buffer \"%s\" not associated with a file" (current-buffer)))
     (list dir file)
     ))
@@ -1949,15 +1987,15 @@ In this case
 returns \"test/myview/a/b\"
 "
   (let ((still-looking t)
-	(path nil))
+		(path nil))
     (mapcar (function (lambda (x)
-			(if (and still-looking
-				 (string-match (car x) local-dir))
-			    (setq still-looking nil
-				  path (concat (cdr x)
-					       (substring local-dir (match-end 0))))
-			  nil)))
-	    vc-starteam-to-directory-alist)
+						(if (and still-looking
+								 (string-match (car x) local-dir))
+							(setq still-looking nil
+								  path (concat (cdr x)
+											   (substring local-dir (match-end 0))))
+						  nil)))
+			vc-starteam-to-directory-alist)
     (if (not path)
 		(if supress-error nil
 		  (error "Could match local path %s to path in any known Starteam view" local-dir))
@@ -1970,12 +2008,12 @@ returns \"test/myview/a/b\"
 with \"letter:\"
 "
   (string-replace-match "^/cygdrive/\\([^/]\\)\\(.*\\)" path "\\1:\\2")
-)
+  )
 
 (defun starteam-unremap-cygdrive( path )
   "Converts a path of type /path/to/cygwin-relative to form /cygwin/c/path/to/cygwin-relative"
   (concat starteam-cygdrive-path path)
-)
+  )
 
 (defun vc-starteam-get-working-dir-from-local-path (local-dir)
   "Given a local directory, attempts to determine the starteam working directory
@@ -1998,25 +2036,25 @@ return \"X:/test\"
 "
   (if vc-starteam-map-cygdrive
       (vc-starteam-remap-cygdrive (vc-starteam-get-working-dir-from-local-path-no-map local-dir))
-      (vc-starteam-get-working-dir-from-local-path-no-map local-dir)
+	(vc-starteam-get-working-dir-from-local-path-no-map local-dir)
+	)
   )
-)
 
 (defun vc-starteam-get-working-dir-from-local-path-no-map (local-dir)
   "Perform the starteam-get-working-dir-from-local-path before applying any cygdrive mappings"
   (let* ((working-dir nil)
-	 (still-looking t))
+		 (still-looking t))
     (mapcar  (lambda (x)
-	       (if (and still-looking
-			(string-match (car x) local-dir))
-		   (setq still-looking nil
-			 working-dir (substring local-dir 
-					   (match-beginning 0) 
-					   (match-end 0)))
-		 nil))
-	    vc-starteam-to-directory-alist)
+			   (if (and still-looking
+						(string-match (car x) local-dir))
+				   (setq still-looking nil
+						 working-dir (substring local-dir 
+												(match-beginning 0) 
+												(match-end 0)))
+				 nil))
+			 vc-starteam-to-directory-alist)
     (if (not working-dir)
-	(error "Could match local path %s to path in any known Starteam view" local-dir)
+		(error "Could match local path %s to path in any known Starteam view" local-dir)
       working-dir)
     ))
 
@@ -2028,16 +2066,16 @@ expression; returns t if the regexp was found, and nil otherwise."
     (set-buffer buffer)
     (goto-char (point-min))      
     (if (re-search-forward regexp nil t) 
-	t 
+		t 
       nil) 
     ))
 
 (defun vc-starteam-display-buffer (buffer)
   "Displays the given buffer according to the value of vc-starteam-switch-to-output"
   (cond ((equal vc-starteam-switch-to-output t)   (switch-to-buffer buffer))
-	((equal vc-starteam-switch-to-output nil) nil)
-	(t (shrink-window-if-larger-than-buffer (display-buffer buffer t)))
-	))
+		((equal vc-starteam-switch-to-output nil) nil)
+		(t (shrink-window-if-larger-than-buffer (display-buffer buffer t)))
+		))
 
 (defun vc-starteam-print-message-file-status ()
   "Checks the status of the file in the current buffer and 
@@ -2101,8 +2139,83 @@ prints it to the mini-buffer"
 
 (add-to-list 'vc-handled-backends 'STARTEAM t) ;Append STARTEAM as a vc backend
 
-;(add-hook 'ediff-cleanup-hook '(lambda nil
-;				 (bury-buffer ediff-buffer-B)))
+										;(add-hook 'ediff-cleanup-hook '(lambda nil
+										;				 (bury-buffer ediff-buffer-B)))
 
 
 (provide 'vc-starteam)
+
+										;****************************************
+										;                                        
+										; There was no way to recursively create the directory structure
+										;unless you checked out all the files.  So, I build the following
+										;method to do this
+										;  Submitted by Inger, Matthew" <inger@Synygy.com>
+										;                                        
+										;****************************************
+(defun vc-starteam-build-directory-structure (indir)
+  (interactive "DDirectory Name:")
+  (let*
+      ((dir (expand-file-name indir))
+       (path (vc-starteam-get-starteam-path-from-local-path dir))
+       (output-buffer)
+       (command "local-mkdir")
+	   )
+    (message "Building recursive directory structure for %s..." dir)
+	
+    (save-excursion
+      (setq output-buffer
+            (vc-starteam-execute command
+								 "LOCAL MKDIR"
+								 path ""
+								 "-is" (vc-starteam-view-working-dir (starteam-get-working-dir-from-local-path dir))))
+      )
+	
+    (switch-to-buffer output-buffer)
+    )
+  ) 
+										;****************************************
+										;                                        
+										;  find the starteam path mapped from a local directory
+
+										;  Submitted by Inger, Matthew" <inger@Synygy.com>
+										;                                        
+										;****************************************
+(defun vc-starteam-get-starteam-path-from-local-path (local-dir)
+  (let ((still-looking t)
+        (path nil))
+    (mapcar (function (lambda (x)
+                        (if (and still-looking
+                                 (string-match (nth 0 x) local-dir))
+                            (setq still-looking nil
+                                  path (concat (nth 2 x)
+                                               (substring local-dir (match-end 0))))
+                          nil)))
+            vc-starteam-to-directory-alist)
+    (if (not path)
+        (error "Could match local path %s to path in any known Starteam view" local-dir)
+      path)
+    ))
+
+(defun vc-starteam-view-working-dir (d) 
+  "Return the -rp flag and its argument, if needed"
+  (interactive "DDirectory Name:")
+  (list "-rp" d))
+
+  
+
+(defun vc-starteam-dired-state-info (bobfile)
+  (let ((state (vc-state bobfile))
+		(rtnval nil))
+	(message "vc-starteam-dired-state-info [%s] [%S]" bobfile state)
+	(setq rtnval    (cond
+					 ((stringp state) (concat "(" state ")"))
+					 ((eq state 'edited) (concat "(" (vc-user-login-name) ")"))
+					 ((eq state 'needs-merge) "(merge)")
+					 ((eq state 'needs-patch) "(patch)")
+					 ((eq state 'unknown) "(unknown)")
+					 ((eq state 'missing) "(missing)")
+					 ((eq state 'unlocked-changes) "(stale)")))
+	(message "vc-starteam-dired-state-info %S %S %s" bobfile state rtnval)
+	rtnval))
+
